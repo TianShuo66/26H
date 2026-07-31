@@ -97,38 +97,30 @@ typedef enum
 // 小球相邻帧最大位移阈值 单位：0.1cm
 #define BALL_MAX_FRAME_CHANGE_DECI_CM 30
 // 小球允许最大速度 单位：0.1cm/s
-#define BALL_MAX_VELOCITY_DECI_CM_S   400L
+#define BALL_MAX_VELOCITY_DECI_CM_S   300L
+// alpha-beta 观测器：残差超过 2.5cm 视为异常视觉帧
+#define BALL_OBSERVER_RESIDUAL_LIMIT_DECI_CM 25L
+#define BALL_OBSERVER_ALPHA_NUMERATOR 65L
+#define BALL_OBSERVER_BETA_NUMERATOR  10L
 // 小球位置死区 0.1cm（0.5cm）
 #define BALL_POSITION_DEADBAND_DECI_CM 5
 // 小球速度死区 0.1cm/s
 #define BALL_VELOCITY_DEADBAND_DECI_CM_S 20L
 #define BALL_SETTLED_VELOCITY_DECI_CM_S 5L
-#define BALL_STATIC_TRIGGER_DECI_CM   10
-// 位置环增益分子
-#define BALL_POSITION_GAIN_NUMERATOR  100L
-// 速度环增益分子
-#define BALL_VELOCITY_GAIN_NUMERATOR  45L
-// 朝 +5cm 端点靠近时的速度反馈较弱，避免该方向过早制动
-#define BALL_POSITIVE_APPROACH_VELOCITY_GAIN_NUMERATOR 30L
-// 朝 +5cm 端点靠近时，进入该剩余距离后才启用速度制动
-#define BALL_POSITIVE_BRAKE_ENABLE_ZONE_DECI_CM 30
-// 朝 +5cm 推进时的最大倾角，先限制动能再进入微调区
-#define MOTOR_POSITIVE_APPROACH_TILT_LIMIT_PULSES 60
-// 倾斜控制增益分母
+// V13 级联控制：位置误差生成期望速度，速度误差生成倾角
+#define BALL_VREF_GAIN_NUMERATOR       13L
+#define BALL_VREF_GAIN_DIVISOR         10L
+#define BALL_VREF_LIMIT_DECI_CM_S     100L
+#define BALL_TILT_GAIN_NUMERATOR       45L
 #define BALL_TILT_GAIN_DIVISOR        100L
-// 钢球速度超过该值视为运动状态，单位：0.1cm/s
-#define BALL_MOTION_THRESHOLD_DECI_CM_S 3L
-// 静摩擦补偿前需要连续静止的时间
-#define BALL_STATIC_HOLD_MS            160U
-// 终点小误差下的最大倾角，避免低速来回冲击
-#define MOTOR_TERMINAL_TILT_LIMIT_PULSES 80
-// 进入目标 1.5cm 内后的微调范围与最大倾角
+// 静摩擦自适应：速度低于 1.5cm/s 时逐步提高最小倾角
+#define BALL_ADAPTIVE_MOTION_DECI_CM_S 15L
+#define BALL_ADAPTIVE_TILT_INITIAL_PULSES 15L
+#define BALL_ADAPTIVE_TILT_STEP_PULSES    5L
+#define BALL_ADAPTIVE_TILT_LIMIT_PULSES 150L
+#define BALL_ADAPTIVE_TILT_PERIOD_MS    250U
+// 微调范围仅用于串口状态观察，不再压低级联控制输出
 #define BALL_MICRO_ADJUST_ZONE_DECI_CM 15
-#define MOTOR_MICRO_TILT_LIMIT_PULSES 24
-// 微调区静摩擦起步脉冲：仅短时使用，随后恢复小倾角微调
-#define MOTOR_MICRO_KICK_TILT_PULSES 60
-#define MOTOR_MICRO_KICK_DURATION_MS 160U
-#define MOTOR_MICRO_KICK_COOLDOWN_MS 360U
 #define TASK_POSITIVE_TARGET_DECI_CM    50
 #define TASK_NEGATIVE_TARGET_DECI_CM   (-50)
 #define TASK_POSITIVE_REVERSE_DECI_CM   45
@@ -251,6 +243,7 @@ static uint8_t SendShortRelativePulse(int32_t current_pulse, int32_t step,
 static uint8_t UpdateBallEstimate(uint32_t *last_measurement_counter,
                                   uint32_t *last_sample_ms,
                                   uint8_t *ball_state_valid,
+                                  uint8_t *bad_measurement_count,
                                   int16_t *ball_x_est_deci_cm,
                                   int32_t *ball_velocity_deci_cm_per_s)
 {
@@ -258,8 +251,9 @@ static uint8_t UpdateBallEstimate(uint32_t *last_measurement_counter,
   uint32_t sample_ms;
   uint32_t dt_ms;
   int16_t x_meas;
-  int32_t x_change;
-  int32_t velocity_raw;
+  int32_t predicted_x;
+  int32_t residual;
+  int32_t predicted_velocity;
 
   measurement_counter = vision_measurement_counter;
   if (measurement_counter == *last_measurement_counter)
@@ -280,6 +274,7 @@ static uint8_t UpdateBallEstimate(uint32_t *last_measurement_counter,
     *ball_velocity_deci_cm_per_s = 0;
     *last_sample_ms = sample_ms;
     *ball_state_valid = 1U;
+    *bad_measurement_count = 0U;
     return 1U;
   }
   dt_ms = sample_ms - *last_sample_ms;
@@ -288,21 +283,86 @@ static uint8_t UpdateBallEstimate(uint32_t *last_measurement_counter,
     *ball_x_est_deci_cm = x_meas;
     *ball_velocity_deci_cm_per_s = 0;
     *last_sample_ms = sample_ms;
+    *bad_measurement_count = 0U;
     return 1U;
   }
-  x_change = (int32_t)x_meas - *ball_x_est_deci_cm;
-  if (AbsInt32(x_change) > BALL_MAX_FRAME_CHANGE_DECI_CM)
+  predicted_x = (int32_t)*ball_x_est_deci_cm
+              + ((*ball_velocity_deci_cm_per_s * (int32_t)dt_ms) / 1000L);
+  residual = (int32_t)x_meas - predicted_x;
+  if (AbsInt32(residual) > BALL_OBSERVER_RESIDUAL_LIMIT_DECI_CM)
   {
-    return 0U;
+    *last_sample_ms = sample_ms;
+    (*bad_measurement_count)++;
+    if (*bad_measurement_count < 3U)
+    {
+      return 0U;
+    }
+    *ball_x_est_deci_cm = x_meas;
+    *ball_velocity_deci_cm_per_s = 0;
+    *bad_measurement_count = 0U;
+    return 1U;
   }
-  velocity_raw = ClampInt32((x_change * 1000L) / (int32_t)dt_ms,
+  *bad_measurement_count = 0U;
+  predicted_velocity = *ball_velocity_deci_cm_per_s
+                     + ((residual * 1000L * BALL_OBSERVER_BETA_NUMERATOR)
+                        / ((int32_t)dt_ms * 100L));
+  *ball_x_est_deci_cm = (int16_t)(predicted_x
+                        + ((residual * BALL_OBSERVER_ALPHA_NUMERATOR) / 100L));
+  *ball_velocity_deci_cm_per_s = ClampInt32(predicted_velocity,
                              -BALL_MAX_VELOCITY_DECI_CM_S,
                              BALL_MAX_VELOCITY_DECI_CM_S);
-  *ball_velocity_deci_cm_per_s = ((*ball_velocity_deci_cm_per_s * 65L)
-                                  + (velocity_raw * 35L)) / 100L;
-  *ball_x_est_deci_cm = x_meas;
   *last_sample_ms = sample_ms;
   return 1U;
+}
+
+static int32_t CalculateVelocityReference(int32_t position_error_deci_cm)
+{
+  return ClampInt32(
+      (BALL_VREF_GAIN_NUMERATOR * position_error_deci_cm)
+      / BALL_VREF_GAIN_DIVISOR,
+      -BALL_VREF_LIMIT_DECI_CM_S, BALL_VREF_LIMIT_DECI_CM_S);
+}
+
+static int32_t CalculateCascadeTilt(int32_t position_error_deci_cm,
+                                    int32_t velocity_deci_cm_per_s)
+{
+  int32_t velocity_reference = CalculateVelocityReference(
+      position_error_deci_cm);
+
+  return ClampInt32((BALL_TILT_GAIN_NUMERATOR
+                     * (velocity_deci_cm_per_s - velocity_reference))
+                    / BALL_TILT_GAIN_DIVISOR,
+                    -MOTOR_TILT_TARGET_LIMIT_PULSES,
+                    MOTOR_TILT_TARGET_LIMIT_PULSES);
+}
+
+static uint8_t IsAdaptiveTiltNeeded(int32_t position_error_deci_cm,
+                                    int32_t velocity_deci_cm_per_s)
+{
+  return ((AbsInt32(position_error_deci_cm)
+           > TASK_SETTLED_POSITION_TOLERANCE_DECI_CM)
+          && (AbsInt32(velocity_deci_cm_per_s)
+              <= BALL_ADAPTIVE_MOTION_DECI_CM_S)) ? 1U : 0U;
+}
+
+static int32_t ApplyAdaptiveTilt(int32_t desired_tilt_pulse,
+                                 int32_t position_error_deci_cm,
+                                 int32_t adaptive_tilt_pulse,
+                                 uint8_t *static_compensation_active)
+{
+  if ((position_error_deci_cm > 0)
+      && (desired_tilt_pulse > -adaptive_tilt_pulse))
+  {
+    *static_compensation_active = 1U;
+    return -adaptive_tilt_pulse;
+  }
+  if ((position_error_deci_cm < 0)
+      && (desired_tilt_pulse < adaptive_tilt_pulse))
+  {
+    *static_compensation_active = 1U;
+    return adaptive_tilt_pulse;
+  }
+  return desired_tilt_pulse;
 }
 
 static int32_t CalibrationTargetFromCommand(uint8_t command)
@@ -343,10 +403,7 @@ int main(void)
   uint32_t last_motor_position_ms = 0U;
   uint32_t last_vision_measurement_counter = 0U;
   uint32_t last_ball_sample_ms = 0U;
-  uint32_t last_static_bias_update = 0U;
-  uint32_t ball_still_start_ms = 0U;
-  uint32_t micro_kick_until_ms = 0U;
-  uint32_t micro_kick_next_ms = 0U;
+  uint32_t last_adaptive_tilt_update_ms = 0U;
   uint32_t task_start_ms = 0U;
   uint32_t task_settled_start_ms = 0U;
   uint32_t task_reverse_boost_until_ms = 0U;
@@ -356,8 +413,7 @@ int main(void)
   int32_t motor_zero_counts = MOTOR_FIXED_ZERO_COUNTS;
   int32_t motor_pulse_est = 0;
   int32_t motor_tilt_target_pulse = 0;
-  int32_t motor_static_bias_pulse = 0;
-  int32_t micro_kick_target_pulse = 0;
+  int32_t adaptive_tilt_pulse = BALL_ADAPTIVE_TILT_INITIAL_PULSES;
   int32_t ball_velocity_deci_cm_per_s = 0;
   int16_t ball_x_est_deci_cm = 0;
   int16_t target_x_deci_cm = 0;
@@ -367,6 +423,7 @@ int main(void)
   uint8_t motor_position_valid = 0U;
   uint8_t closed_loop_enabled = 0U;
   uint8_t ball_state_valid = 0U;
+  uint8_t bad_measurement_count = 0U;
   uint8_t motor_position_request_pending = 0U;
   uint8_t previous_command_direction = 0U;
   uint8_t previous_command_active = 0U;
@@ -428,6 +485,7 @@ int main(void)
 
     (void)UpdateBallEstimate(&last_vision_measurement_counter,
                              &last_ball_sample_ms, &ball_state_valid,
+                             &bad_measurement_count,
                              &ball_x_est_deci_cm,
                              &ball_velocity_deci_cm_per_s);
 
@@ -479,6 +537,10 @@ int main(void)
                                       (int32_t)target_x_deci_cm
                                           - ball_x_est_deci_cm,
                                       ball_velocity_deci_cm_per_s,
+                                      CalculateVelocityReference(
+                                          (int32_t)target_x_deci_cm
+                                          - ball_x_est_deci_cm),
+                                      adaptive_tilt_pulse,
                                       fast_tilt_tracking,
                                       static_compensation_active,
                                       micro_adjust_active,
@@ -619,15 +681,11 @@ int main(void)
             motor_zero_counts = MOTOR_FIXED_ZERO_COUNTS;
             motor_pulse_est = 0;
             motor_tilt_target_pulse = 0;
-            motor_static_bias_pulse = 0;
-            micro_kick_target_pulse = 0;
-            micro_kick_until_ms = 0U;
-            micro_kick_next_ms = 0U;
+            adaptive_tilt_pulse = BALL_ADAPTIVE_TILT_INITIAL_PULSES;
             fast_tilt_tracking = 0U;
             static_compensation_active = 0U;
             micro_adjust_active = 0U;
-            ball_still_start_ms = now_ms;
-            last_static_bias_update = now_ms;
+            last_adaptive_tilt_update_ms = now_ms;
             motor_position_valid = 1U;
             last_motor_position_ms = now_ms;
             closed_loop_enabled = 1U;
@@ -826,154 +884,42 @@ int main(void)
         {
           int32_t position_error = (int32_t)target_x_deci_cm
                                    - ball_x_est_deci_cm;
-          int32_t control_error = position_error;
           int32_t desired_tilt_pulse;
           int32_t step;
           int32_t step_limit;
-          int32_t velocity_gain_numerator;
-          uint8_t micro_kick_active;
           uint8_t direction;
           uint8_t fast_braking;
-          uint8_t static_ready;
 
           last_control_update = now_ms;
-          if (AbsInt32(ball_velocity_deci_cm_per_s)
-              <= BALL_MOTION_THRESHOLD_DECI_CM_S)
-          {
-            if (ball_still_start_ms == 0U)
-            {
-              ball_still_start_ms = now_ms;
-            }
-          }
-          else
-          {
-            ball_still_start_ms = 0U;
-          }
-          static_ready = ((ball_still_start_ms != 0U)
-                          && ((now_ms - ball_still_start_ms)
-                              >= BALL_STATIC_HOLD_MS)) ? 1U : 0U;
           static_compensation_active = 0U;
           micro_adjust_active = (AbsInt32(position_error)
                                  <= BALL_MICRO_ADJUST_ZONE_DECI_CM) ? 1U : 0U;
-          if ((micro_kick_until_ms != 0U) && (now_ms >= micro_kick_until_ms))
+          desired_tilt_pulse = CalculateCascadeTilt(
+              position_error, ball_velocity_deci_cm_per_s);
+          if (IsAdaptiveTiltNeeded(position_error,
+                                   ball_velocity_deci_cm_per_s) != 0U)
           {
-            micro_kick_until_ms = 0U;
-            micro_kick_target_pulse = 0;
-          }
-          if ((micro_adjust_active == 0U)
-              || (AbsInt32(position_error) <= BALL_POSITION_DEADBAND_DECI_CM)
-              || (((position_error < 0) && (micro_kick_target_pulse < 0))
-                  || ((position_error > 0) && (micro_kick_target_pulse > 0))))
-          {
-            micro_kick_until_ms = 0U;
-            micro_kick_target_pulse = 0;
-          }
-          if ((micro_kick_target_pulse == 0)
-              && (micro_adjust_active != 0U)
-              && (AbsInt32(position_error) > BALL_POSITION_DEADBAND_DECI_CM)
-              && (static_ready != 0U)
-              && (now_ms >= micro_kick_next_ms))
-          {
-            micro_kick_target_pulse = (position_error < 0)
-                                    ? MOTOR_MICRO_KICK_TILT_PULSES
-                                    : -MOTOR_MICRO_KICK_TILT_PULSES;
-            micro_kick_until_ms = now_ms + MOTOR_MICRO_KICK_DURATION_MS;
-            micro_kick_next_ms = now_ms + MOTOR_MICRO_KICK_COOLDOWN_MS;
-          }
-          micro_kick_active = (micro_kick_target_pulse != 0) ? 1U : 0U;
-          velocity_gain_numerator = BALL_VELOCITY_GAIN_NUMERATOR;
-          if ((target_x_deci_cm == TASK_POSITIVE_TARGET_DECI_CM)
-              && (position_error > 0)
-              && (ball_velocity_deci_cm_per_s > 0))
-          {
-            velocity_gain_numerator =
-                (position_error <= BALL_POSITIVE_BRAKE_ENABLE_ZONE_DECI_CM)
-                  ? BALL_POSITIVE_APPROACH_VELOCITY_GAIN_NUMERATOR : 0L;
-          }
-
-          if ((AbsInt32(position_error) <= BALL_POSITION_DEADBAND_DECI_CM)
-              && (AbsInt32(ball_velocity_deci_cm_per_s)
-                  <= BALL_SETTLED_VELOCITY_DECI_CM_S))
-          {
-            desired_tilt_pulse = 0;
-            motor_static_bias_pulse = 0;
+            if ((now_ms - last_adaptive_tilt_update_ms)
+                >= BALL_ADAPTIVE_TILT_PERIOD_MS)
+            {
+              last_adaptive_tilt_update_ms = now_ms;
+              adaptive_tilt_pulse = ClampInt32(
+                  adaptive_tilt_pulse + BALL_ADAPTIVE_TILT_STEP_PULSES,
+                  BALL_ADAPTIVE_TILT_INITIAL_PULSES,
+                  BALL_ADAPTIVE_TILT_LIMIT_PULSES);
+            }
+            desired_tilt_pulse = ApplyAdaptiveTilt(
+                desired_tilt_pulse, position_error, adaptive_tilt_pulse,
+                &static_compensation_active);
           }
           else
           {
-            /* The rod target is bounded; short pulses only chase this target. */
-            desired_tilt_pulse = -((BALL_POSITION_GAIN_NUMERATOR * control_error
-                                    - velocity_gain_numerator
-                                      * ball_velocity_deci_cm_per_s)
-                                   / BALL_TILT_GAIN_DIVISOR);
-            desired_tilt_pulse = ClampInt32(desired_tilt_pulse,
-                                             -MOTOR_TILT_TARGET_LIMIT_PULSES,
-                                             MOTOR_TILT_TARGET_LIMIT_PULSES);
-            /* Overcome static friction only while the ball is effectively still. */
-            if ((AbsInt32(position_error) >= BALL_STATIC_TRIGGER_DECI_CM)
-                && (static_ready != 0U)
-                && (AbsInt32(desired_tilt_pulse) < MOTOR_STATIC_TILT_PULSES))
+            if ((adaptive_tilt_pulse > BALL_ADAPTIVE_TILT_INITIAL_PULSES)
+                && ((now_ms - last_adaptive_tilt_update_ms)
+                    >= BALL_ADAPTIVE_TILT_PERIOD_MS))
             {
-              desired_tilt_pulse = (position_error < 0)
-                                 ? MOTOR_STATIC_TILT_PULSES
-                                 : -MOTOR_STATIC_TILT_PULSES;
-              static_compensation_active = 1U;
-            }
-            if ((AbsInt32(position_error) < BALL_STATIC_TRIGGER_DECI_CM)
-                || (static_ready == 0U)
-                || (micro_adjust_active != 0U))
-            {
-              motor_static_bias_pulse = 0;
-            }
-            else if (((position_error < 0) && (motor_static_bias_pulse < 0))
-                     || ((position_error > 0) && (motor_static_bias_pulse > 0)))
-            {
-              motor_static_bias_pulse = 0;
-            }
-            else if (((now_ms - last_static_bias_update)
-                      >= MOTOR_STATIC_BIAS_PERIOD_MS)
-                     && (AbsInt32(motor_pulse_est - (desired_tilt_pulse
-                                                      + motor_static_bias_pulse))
-                         <= MOTOR_SHORT_STEP_MAX_PULSES))
-            {
-              last_static_bias_update = now_ms;
-              motor_static_bias_pulse += (position_error < 0)
-                                       ? MOTOR_STATIC_BIAS_STEP_PULSES
-                                       : -MOTOR_STATIC_BIAS_STEP_PULSES;
-              motor_static_bias_pulse = ClampInt32(
-                  motor_static_bias_pulse, -MOTOR_STATIC_BIAS_LIMIT_PULSES,
-                  MOTOR_STATIC_BIAS_LIMIT_PULSES);
-            }
-            desired_tilt_pulse += motor_static_bias_pulse;
-            if (motor_static_bias_pulse != 0)
-            {
-              static_compensation_active = 1U;
-            }
-            desired_tilt_pulse = ClampInt32(desired_tilt_pulse,
-                                             -MOTOR_TILT_TARGET_LIMIT_PULSES,
-                                             MOTOR_TILT_TARGET_LIMIT_PULSES);
-            if (AbsInt32(position_error) <= BALL_POSITION_DEADBAND_DECI_CM)
-            {
-              desired_tilt_pulse = ClampInt32(
-                  desired_tilt_pulse, -MOTOR_TERMINAL_TILT_LIMIT_PULSES,
-                  MOTOR_TERMINAL_TILT_LIMIT_PULSES);
-            }
-            if (micro_adjust_active != 0U)
-            {
-              desired_tilt_pulse = ClampInt32(
-                  desired_tilt_pulse, -MOTOR_MICRO_TILT_LIMIT_PULSES,
-                  MOTOR_MICRO_TILT_LIMIT_PULSES);
-              if (micro_kick_active != 0U)
-              {
-                desired_tilt_pulse = micro_kick_target_pulse;
-                static_compensation_active = 1U;
-              }
-            }
-            else if ((target_x_deci_cm == TASK_POSITIVE_TARGET_DECI_CM)
-                     && (position_error > 0))
-            {
-              desired_tilt_pulse = ClampInt32(
-                  desired_tilt_pulse, -MOTOR_POSITIVE_APPROACH_TILT_LIMIT_PULSES,
-                  MOTOR_POSITIVE_APPROACH_TILT_LIMIT_PULSES);
+              last_adaptive_tilt_update_ms = now_ms;
+              adaptive_tilt_pulse -= BALL_ADAPTIVE_TILT_STEP_PULSES;
             }
           }
           motor_tilt_target_pulse = desired_tilt_pulse;

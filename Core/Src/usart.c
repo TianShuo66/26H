@@ -27,7 +27,7 @@ static uint8_t uart4_rx_byte;
 static uint8_t usart1_rx_byte;
 static uint8_t vision_rx_line[24];
 static uint8_t vision_rx_length;
-static uint8_t debug_control_buffer[144];
+static uint8_t debug_control_buffer[192];
 static volatile uint8_t debug_control_tx_busy;
 static volatile uint8_t debug_command;
 
@@ -687,6 +687,8 @@ HAL_StatusTypeDef Debug_PrintControlState(int16_t ball_x_deci_cm,
                                            int32_t motor_tilt_target_pulse,
                                            int32_t position_error_deci_cm,
                                            int32_t ball_velocity_deci_cm_per_s,
+                                           int32_t velocity_reference_deci_cm_per_s,
+                                           int32_t adaptive_tilt_pulse,
                                            uint8_t fast_tilt_tracking,
                                            uint8_t static_compensation_active,
                                            uint8_t micro_adjust_active,
@@ -736,6 +738,21 @@ HAL_StatusTypeDef Debug_PrintControlState(int16_t ball_x_deci_cm,
   buffer[length++] = 'L';
   buffer[length++] = ',';
   Debug_AppendSignedInt32(buffer, &length, ball_velocity_deci_cm_per_s);
+  buffer[length++] = ',';
+  buffer[length++] = 'V';
+  buffer[length++] = 'R';
+  buffer[length++] = 'E';
+  buffer[length++] = 'F';
+  buffer[length++] = ',';
+  Debug_AppendSignedInt32(buffer, &length, velocity_reference_deci_cm_per_s);
+  buffer[length++] = ',';
+  buffer[length++] = 'A';
+  buffer[length++] = 'D';
+  buffer[length++] = 'A';
+  buffer[length++] = 'P';
+  buffer[length++] = 'T';
+  buffer[length++] = ',';
+  Debug_AppendSignedInt32(buffer, &length, adaptive_tilt_pulse);
   buffer[length++] = ',';
   buffer[length++] = 'F';
   buffer[length++] = 'A';
