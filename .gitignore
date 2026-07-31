@@ -1,0 +1,22 @@
+# Keil uVision user settings and generated build output
+MDK-ARM/*.uvguix.*
+MDK-ARM/*.uvoptx
+MDK-ARM/DebugConfig/
+MDK-ARM/F407_STEP2_EmmV5/_F407_STEP2_EmmV5/
+MDK-ARM/F407_STEP2_EmmV5/*.axf
+MDK-ARM/F407_STEP2_EmmV5/*.bin
+MDK-ARM/F407_STEP2_EmmV5/*.build_log.htm
+MDK-ARM/F407_STEP2_EmmV5/*.crf
+MDK-ARM/F407_STEP2_EmmV5/*.d
+MDK-ARM/F407_STEP2_EmmV5/*.dep
+MDK-ARM/F407_STEP2_EmmV5/*.hex
+MDK-ARM/F407_STEP2_EmmV5/*.htm
+MDK-ARM/F407_STEP2_EmmV5/*.lnp
+MDK-ARM/F407_STEP2_EmmV5/*.map
+MDK-ARM/F407_STEP2_EmmV5/*.o
+MDK-ARM/F407_STEP2_EmmV5/*.lst
+
+# Historical local build logs
+MDK-ARM/*_build.log
+MDK-ARM/build_*.log
+MDK-ARM/*.lst
