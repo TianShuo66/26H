@@ -31,8 +31,11 @@ static uint8_t debug_control_buffer[192];
 static volatile uint8_t debug_control_tx_busy;
 static volatile uint8_t debug_command;
 
-/* Steel ball placed at mechanical O reports B,-102,y before correction. */
+/* Current X readings at physical -5/0/+5cm are -4.8/0.2/5.3cm. */
 #define VISION_X_ZERO_OFFSET_DECI_CM (-102L)
+#define VISION_X_CALIBRATION_NUMERATOR 200L
+#define VISION_X_CALIBRATION_DENOMINATOR 202L
+#define VISION_X_CALIBRATION_BIAS 500L
 
 volatile int16_t vision_x_deci_cm;
 volatile int16_t vision_y_deci_cm;
@@ -83,6 +86,7 @@ static void Vision_ParseLine(void)
   int16_t x;
   int16_t y;
   int32_t corrected_x;
+  int32_t calibration_numerator;
 
   if ((vision_rx_length == 1U) && (vision_rx_line[0] == 'N'))
   {
@@ -98,6 +102,17 @@ static void Vision_ParseLine(void)
     return;
   }
   corrected_x = (int32_t)x - VISION_X_ZERO_OFFSET_DECI_CM;
+  calibration_numerator = (corrected_x * VISION_X_CALIBRATION_NUMERATOR)
+                        - VISION_X_CALIBRATION_BIAS;
+  if (calibration_numerator >= 0L)
+  {
+    calibration_numerator += VISION_X_CALIBRATION_DENOMINATOR / 2L;
+  }
+  else
+  {
+    calibration_numerator -= VISION_X_CALIBRATION_DENOMINATOR / 2L;
+  }
+  corrected_x = calibration_numerator / VISION_X_CALIBRATION_DENOMINATOR;
   if ((corrected_x < -32768L) || (corrected_x > 32767L))
   {
     return;
