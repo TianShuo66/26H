@@ -51,8 +51,8 @@ typedef enum
 #define MOTOR_PULSES_PER_REVOLUTION 3200U
 // 电机位置反馈寄存器一圈计数值（编码器/总线位置单位）
 #define MOTOR_POSITION_COUNTS_PER_REVOLUTION 65536L
-// 杆子处于物理水平零点时的电机位置反馈值，已由机构固定并实测。
-#define MOTOR_FIXED_ZERO_COUNTS              (-624L)
+// 驱动器上电后位置反馈从零开始；机构上电位置即物理水平零点。
+#define MOTOR_FIXED_ZERO_COUNTS              0L
 // 电机位置查询周期 40ms
 #define MOTOR_POSITION_QUERY_PERIOD_MS 40U
 // 位置数据最大有效时长，超过视为过期 120ms
