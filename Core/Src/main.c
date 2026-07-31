@@ -122,8 +122,8 @@ typedef enum
 #define BALL_STATIC_HOLD_MS            160U
 // 终点小误差下的最大倾角，避免低速来回冲击
 #define MOTOR_TERMINAL_TILT_LIMIT_PULSES 80
-// 进入目标 2cm 内后的微调范围与最大倾角
-#define BALL_MICRO_ADJUST_ZONE_DECI_CM 20
+// 进入目标 1.5cm 内后的微调范围与最大倾角
+#define BALL_MICRO_ADJUST_ZONE_DECI_CM 15
 #define MOTOR_MICRO_TILT_LIMIT_PULSES 24
 #define TASK_POSITIVE_TARGET_DECI_CM    50
 #define TASK_NEGATIVE_TARGET_DECI_CM   (-50)
