@@ -110,6 +110,8 @@ typedef enum
 #define BALL_VELOCITY_GAIN_NUMERATOR  45L
 // 朝 +5cm 端点靠近时的速度反馈较弱，避免该方向过早制动
 #define BALL_POSITIVE_APPROACH_VELOCITY_GAIN_NUMERATOR 30L
+// 朝 +5cm 端点靠近时，进入该剩余距离后才启用速度制动
+#define BALL_POSITIVE_BRAKE_ENABLE_ZONE_DECI_CM 10
 // 倾斜控制增益分母
 #define BALL_TILT_GAIN_DIVISOR        100L
 // 钢球速度超过该值视为运动状态，单位：0.1cm/s
@@ -846,7 +848,8 @@ int main(void)
               && (ball_velocity_deci_cm_per_s > 0))
           {
             velocity_gain_numerator =
-                BALL_POSITIVE_APPROACH_VELOCITY_GAIN_NUMERATOR;
+                (position_error <= BALL_POSITIVE_BRAKE_ENABLE_ZONE_DECI_CM)
+                  ? BALL_POSITIVE_APPROACH_VELOCITY_GAIN_NUMERATOR : 0L;
           }
 
           if ((AbsInt32(position_error) <= BALL_POSITION_DEADBAND_DECI_CM)
