@@ -108,23 +108,10 @@ typedef enum
 #define BALL_VELOCITY_GAIN_NUMERATOR  45L
 // 倾斜控制增益分母
 #define BALL_TILT_GAIN_DIVISOR        100L
-// 速度超过该值时，使用预测停车点而非当前位置控制，单位：0.1cm/s
-#define MODEL_PREDICT_MIN_VELOCITY_DECI_CM_S 10L
-// 由实测 +40 / -40 脉冲得到的反向制动加速度，单位：0.1cm/s^2
-#define MODEL_BRAKE_DECEL_FOR_POSITIVE_VELOCITY 36L
-#define MODEL_BRAKE_DECEL_FOR_NEGATIVE_VELOCITY 30L
-// 预测停车距离上限，避免异常视觉速度造成过大的反向指令，单位：0.1cm
-#define MODEL_MAX_STOP_DISTANCE_DECI_CM 240L
-// 预测制动的摆杆反向与机构响应延迟，单位：ms
-#define MODEL_BRAKE_ACTUATOR_DELAY_MS 220L
-// 预测制动额外安全距离，单位：0.1cm
-#define MODEL_BRAKE_TRIGGER_MARGIN_DECI_CM 2L
-// 非制动的终端区摆杆目标限制，避免在目的地附近反复拉动钢球
+// 钢球速度超过该值视为运动状态，单位：0.1cm/s
+#define BALL_MOTION_THRESHOLD_DECI_CM_S 10L
+// 终点小误差下的最大倾角，避免低速来回冲击
 #define MOTOR_TERMINAL_TILT_LIMIT_PULSES 80
-// 钢球越过目标后快速拉回的最小反向倾角脉冲
-#define MOTOR_RECOVERY_TILT_PULSES 60
-// 启用快速拉回的最大目标距离，单位：0.1cm
-#define MODEL_RECOVERY_ZONE_DECI_CM 10
 #define TASK_POSITIVE_TARGET_DECI_CM    50
 #define TASK_NEGATIVE_TARGET_DECI_CM   (-50)
 #define TASK_POSITIVE_REVERSE_DECI_CM   45
@@ -191,25 +178,6 @@ static int32_t AbsInt32(int32_t value)
     return -value;
   }
   return value;
-}
-
-static int32_t CalculatePredictedStopDistance(int32_t velocity_deci_cm_per_s)
-{
-  int32_t brake_decel;
-  int32_t distance;
-
-  if (velocity_deci_cm_per_s == 0)
-  {
-    return 0;
-  }
-
-  /* Positive motor pulses brake positive ball velocity; the two sides differ. */
-  brake_decel = (velocity_deci_cm_per_s > 0)
-                  ? MODEL_BRAKE_DECEL_FOR_POSITIVE_VELOCITY
-                  : MODEL_BRAKE_DECEL_FOR_NEGATIVE_VELOCITY;
-  distance = (velocity_deci_cm_per_s * velocity_deci_cm_per_s)
-             / (2L * brake_decel);
-  return ClampInt32(distance, 0, MODEL_MAX_STOP_DISTANCE_DECI_CM);
 }
 
 static void EnableMotor(uint8_t *motor_enabled)
@@ -370,8 +338,6 @@ int main(void)
   int32_t motor_tilt_target_pulse = 0;
   int32_t motor_static_bias_pulse = 0;
   int32_t ball_velocity_deci_cm_per_s = 0;
-  int32_t predicted_stop_distance_deci_cm = 0;
-  int32_t predicted_error_deci_cm = 0;
   int16_t ball_x_est_deci_cm = 0;
   int16_t target_x_deci_cm = 0;
   int32_t calibration_target_pulse = 0;
@@ -383,8 +349,6 @@ int main(void)
   uint8_t motor_position_request_pending = 0U;
   uint8_t previous_command_direction = 0U;
   uint8_t previous_command_active = 0U;
-  uint8_t predicted_brake_active = 0U;
-  uint8_t recovery_active = 0U;
   CalibrationState_t calibration_state = CALIBRATION_IDLE;
   TaskState_t task_state = TASK_IDLE;
 
@@ -488,10 +452,9 @@ int main(void)
         (void)Debug_PrintControlState(vision_x_deci_cm, vision_y_deci_cm,
                                       target_x_deci_cm, motor_pulse_est,
                                       motor_tilt_target_pulse,
-                                      predicted_stop_distance_deci_cm,
-                                      predicted_error_deci_cm,
-                                      predicted_brake_active,
-                                      recovery_active,
+                                      (int32_t)target_x_deci_cm
+                                          - ball_x_est_deci_cm,
+                                      ball_velocity_deci_cm_per_s,
                                       motor_position_counts,
                                       position_centi_degrees,
                                       now_ms - closed_loop_start_ms);
@@ -630,10 +593,6 @@ int main(void)
             motor_pulse_est = 0;
             motor_tilt_target_pulse = 0;
             motor_static_bias_pulse = 0;
-            predicted_stop_distance_deci_cm = 0;
-            predicted_error_deci_cm = 0;
-            predicted_brake_active = 0U;
-            recovery_active = 0U;
             last_static_bias_update = now_ms;
             motor_position_valid = 1U;
             last_motor_position_ms = now_ms;
@@ -837,54 +796,10 @@ int main(void)
           int32_t desired_tilt_pulse;
           int32_t step;
           int32_t step_limit;
-          int32_t remaining_distance_deci_cm;
-          int32_t brake_trigger_distance_deci_cm;
           uint8_t direction;
           uint8_t fast_braking;
-          uint8_t moving_away_from_target;
-          uint8_t moving_toward_target;
 
           last_control_update = now_ms;
-          remaining_distance_deci_cm = AbsInt32(position_error);
-          moving_toward_target = (((position_error > 0)
-                                   && (ball_velocity_deci_cm_per_s
-                                       >= MODEL_PREDICT_MIN_VELOCITY_DECI_CM_S))
-                                  || ((position_error < 0)
-                                      && (ball_velocity_deci_cm_per_s
-                                          <= -MODEL_PREDICT_MIN_VELOCITY_DECI_CM_S)))
-                                   ? 1U : 0U;
-          moving_away_from_target = (((position_error > 0)
-                                      && (ball_velocity_deci_cm_per_s
-                                          <= -MODEL_PREDICT_MIN_VELOCITY_DECI_CM_S))
-                                     || ((position_error < 0)
-                                         && (ball_velocity_deci_cm_per_s
-                                             >= MODEL_PREDICT_MIN_VELOCITY_DECI_CM_S)))
-                                      ? 1U : 0U;
-          predicted_stop_distance_deci_cm = 0;
-          predicted_brake_active = 0U;
-          recovery_active = ((moving_away_from_target != 0U)
-                             && (remaining_distance_deci_cm
-                                 <= MODEL_RECOVERY_ZONE_DECI_CM)) ? 1U : 0U;
-          if (AbsInt32(ball_velocity_deci_cm_per_s)
-              >= MODEL_PREDICT_MIN_VELOCITY_DECI_CM_S)
-          {
-            predicted_stop_distance_deci_cm = CalculatePredictedStopDistance(
-                ball_velocity_deci_cm_per_s);
-          }
-          brake_trigger_distance_deci_cm = predicted_stop_distance_deci_cm
-              + ((AbsInt32(ball_velocity_deci_cm_per_s)
-                  * MODEL_BRAKE_ACTUATOR_DELAY_MS) / 1000L)
-              + MODEL_BRAKE_TRIGGER_MARGIN_DECI_CM;
-          if ((moving_toward_target != 0U)
-              && (brake_trigger_distance_deci_cm >= remaining_distance_deci_cm))
-          {
-            control_error = position_error
-                          - ((ball_velocity_deci_cm_per_s > 0)
-                               ? predicted_stop_distance_deci_cm
-                               : -predicted_stop_distance_deci_cm);
-            predicted_brake_active = 1U;
-          }
-          predicted_error_deci_cm = control_error;
 
           if ((AbsInt32(position_error) <= BALL_POSITION_DEADBAND_DECI_CM)
               && (AbsInt32(ball_velocity_deci_cm_per_s)
@@ -906,7 +821,7 @@ int main(void)
             /* Overcome static friction only while the ball is effectively still. */
             if ((AbsInt32(position_error) >= BALL_STATIC_TRIGGER_DECI_CM)
                 && (AbsInt32(ball_velocity_deci_cm_per_s)
-                 < MODEL_PREDICT_MIN_VELOCITY_DECI_CM_S)
+                 < BALL_MOTION_THRESHOLD_DECI_CM_S)
                 && (AbsInt32(desired_tilt_pulse) < MOTOR_STATIC_TILT_PULSES))
             {
               desired_tilt_pulse = (position_error < 0)
@@ -915,7 +830,7 @@ int main(void)
             }
             if ((AbsInt32(position_error) < BALL_STATIC_TRIGGER_DECI_CM)
                 || (AbsInt32(ball_velocity_deci_cm_per_s)
-                    >= MODEL_PREDICT_MIN_VELOCITY_DECI_CM_S))
+                    >= BALL_MOTION_THRESHOLD_DECI_CM_S))
             {
               motor_static_bias_pulse = 0;
             }
@@ -942,16 +857,7 @@ int main(void)
             desired_tilt_pulse = ClampInt32(desired_tilt_pulse,
                                              -MOTOR_TILT_TARGET_LIMIT_PULSES,
                                              MOTOR_TILT_TARGET_LIMIT_PULSES);
-            if ((recovery_active != 0U)
-                && (AbsInt32(desired_tilt_pulse) < MOTOR_RECOVERY_TILT_PULSES))
-            {
-              desired_tilt_pulse = (position_error < 0)
-                                 ? MOTOR_RECOVERY_TILT_PULSES
-                                 : -MOTOR_RECOVERY_TILT_PULSES;
-            }
-            if ((remaining_distance_deci_cm <= BALL_POSITION_DEADBAND_DECI_CM)
-                && (predicted_brake_active == 0U)
-                && (recovery_active == 0U))
+            if (AbsInt32(position_error) <= BALL_POSITION_DEADBAND_DECI_CM)
             {
               desired_tilt_pulse = ClampInt32(
                   desired_tilt_pulse, -MOTOR_TERMINAL_TILT_LIMIT_PULSES,
@@ -959,16 +865,7 @@ int main(void)
             }
           }
           motor_tilt_target_pulse = desired_tilt_pulse;
-          fast_braking = ((predicted_brake_active != 0U)
-                          || (recovery_active != 0U)
-                          || ((task_state == TASK_TO_NEGATIVE)
-                              && (now_ms < task_reverse_boost_until_ms)))
-                            ? 1U : 0U;
-          step_limit = (fast_braking != 0U)
-                         ? MOTOR_REVERSE_BRAKE_MAX_STEP_PULSES
-                         : MOTOR_SHORT_STEP_MAX_PULSES;
-          step = ClampInt32(desired_tilt_pulse - motor_pulse_est,
-                            -step_limit, step_limit);
+          step = desired_tilt_pulse - motor_pulse_est;
           if (step == 0)
           {
             previous_command_active = 0U;
@@ -976,12 +873,19 @@ int main(void)
           else
           {
             direction = (step > 0) ? 0U : 1U;
+            fast_braking = ((task_state == TASK_TO_NEGATIVE)
+                             && (now_ms < task_reverse_boost_until_ms))
+                              ? 1U : 0U;
             if ((previous_command_active != 0U)
                 && (direction != previous_command_direction))
             {
               Emm_V5_Stop_Now(MOTOR_ADDRESS, false);
               fast_braking = 1U;
             }
+            step_limit = (fast_braking != 0U)
+                           ? MOTOR_REVERSE_BRAKE_MAX_STEP_PULSES
+                           : MOTOR_SHORT_STEP_MAX_PULSES;
+            step = ClampInt32(step, -step_limit, step_limit);
             if (SendShortRelativePulse(motor_pulse_est, step,
                                        fast_braking) == 0U)
             {

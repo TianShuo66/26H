@@ -685,10 +685,8 @@ HAL_StatusTypeDef Debug_PrintControlState(int16_t ball_x_deci_cm,
                                            int16_t target_x_deci_cm,
                                            int32_t motor_pulse,
                                            int32_t motor_tilt_target_pulse,
-                                           int32_t predicted_stop_distance_deci_cm,
-                                           int32_t predicted_error_deci_cm,
-                                           uint8_t predicted_brake_active,
-                                           uint8_t recovery_active,
+                                           int32_t position_error_deci_cm,
+                                           int32_t ball_velocity_deci_cm_per_s,
                                            int32_t position_counts,
                                            int32_t position_centi_degrees,
                                            uint32_t task_elapsed_ms)
@@ -724,47 +722,17 @@ HAL_StatusTypeDef Debug_PrintControlState(int16_t ball_x_deci_cm,
   buffer[length++] = ',';
   Debug_AppendDeciCm(buffer, &length, target_x_deci_cm);
   buffer[length++] = ',';
-  buffer[length++] = 'S';
-  buffer[length++] = 'T';
-  buffer[length++] = 'O';
-  buffer[length++] = 'P';
-  buffer[length++] = '_';
-  buffer[length++] = 'D';
-  buffer[length++] = 'I';
-  buffer[length++] = 'S';
-  buffer[length++] = 'T';
-  buffer[length++] = ',';
-  Debug_AppendDeciCm(buffer, &length, predicted_stop_distance_deci_cm);
-  buffer[length++] = ',';
-  buffer[length++] = 'P';
-  buffer[length++] = 'R';
-  buffer[length++] = 'E';
-  buffer[length++] = 'D';
-  buffer[length++] = '_';
   buffer[length++] = 'E';
   buffer[length++] = 'R';
   buffer[length++] = 'R';
   buffer[length++] = ',';
-  Debug_AppendDeciCm(buffer, &length, predicted_error_deci_cm);
+  Debug_AppendDeciCm(buffer, &length, position_error_deci_cm);
   buffer[length++] = ',';
-  buffer[length++] = 'B';
-  buffer[length++] = 'R';
-  buffer[length++] = 'A';
-  buffer[length++] = 'K';
-  buffer[length++] = 'E';
-  buffer[length++] = ',';
-  Debug_AppendUnsignedInt32(buffer, &length, predicted_brake_active);
-  buffer[length++] = ',';
-  buffer[length++] = 'R';
-  buffer[length++] = 'E';
-  buffer[length++] = 'C';
-  buffer[length++] = 'O';
   buffer[length++] = 'V';
   buffer[length++] = 'E';
-  buffer[length++] = 'R';
-  buffer[length++] = 'Y';
+  buffer[length++] = 'L';
   buffer[length++] = ',';
-  Debug_AppendUnsignedInt32(buffer, &length, recovery_active);
+  Debug_AppendSignedInt32(buffer, &length, ball_velocity_deci_cm_per_s);
   buffer[length++] = ',';
   buffer[length++] = 'P';
   buffer[length++] = 'U';
