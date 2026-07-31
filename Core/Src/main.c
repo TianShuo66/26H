@@ -51,6 +51,8 @@ typedef enum
 #define MOTOR_PULSES_PER_REVOLUTION 3200U
 // 电机位置反馈寄存器一圈计数值（编码器/总线位置单位）
 #define MOTOR_POSITION_COUNTS_PER_REVOLUTION 65536L
+// 杆子处于物理水平零点时的电机位置反馈值，已由机构固定并实测。
+#define MOTOR_FIXED_ZERO_COUNTS              (-624L)
 // 电机位置查询周期 40ms
 #define MOTOR_POSITION_QUERY_PERIOD_MS 40U
 // 位置数据最大有效时长，超过视为过期 120ms
@@ -297,7 +299,7 @@ int main(void)
   uint32_t calibration_start_ms = 0U;
   uint32_t calibration_phase_start_ms = 0U;
   int32_t motor_position_counts = 0;
-  int32_t motor_zero_counts = 0;
+  int32_t motor_zero_counts = MOTOR_FIXED_ZERO_COUNTS;
   int32_t motor_pulse_est = 0;
   int32_t motor_tilt_target_pulse = 0;
   int32_t motor_static_bias_pulse = 0;
@@ -457,7 +459,7 @@ int main(void)
           else
           {
             EnableMotor(&motor_enabled);
-            motor_zero_counts = motor_position_counts;
+            motor_zero_counts = MOTOR_FIXED_ZERO_COUNTS;
             motor_pulse_est = 0;
             calibration_target_pulse = requested_calibration_target;
             calibration_state = CALIBRATION_MOVE;
@@ -535,9 +537,9 @@ int main(void)
           }
           else
           {
-            /* The operator levels the rod before the first start; this is zero. */
+            /* Always use the calibrated mechanical zero, never the start position. */
             EnableMotor(&motor_enabled);
-            motor_zero_counts = motor_position_counts;
+            motor_zero_counts = MOTOR_FIXED_ZERO_COUNTS;
             motor_pulse_est = 0;
             motor_tilt_target_pulse = 0;
             motor_static_bias_pulse = 0;
