@@ -111,7 +111,9 @@ typedef enum
 // 朝 +5cm 端点靠近时的速度反馈较弱，避免该方向过早制动
 #define BALL_POSITIVE_APPROACH_VELOCITY_GAIN_NUMERATOR 30L
 // 朝 +5cm 端点靠近时，进入该剩余距离后才启用速度制动
-#define BALL_POSITIVE_BRAKE_ENABLE_ZONE_DECI_CM 10
+#define BALL_POSITIVE_BRAKE_ENABLE_ZONE_DECI_CM 30
+// 朝 +5cm 推进时的最大倾角，先限制动能再进入微调区
+#define MOTOR_POSITIVE_APPROACH_TILT_LIMIT_PULSES 60
 // 倾斜控制增益分母
 #define BALL_TILT_GAIN_DIVISOR        100L
 // 钢球速度超过该值视为运动状态，单位：0.1cm/s
@@ -923,6 +925,13 @@ int main(void)
               desired_tilt_pulse = ClampInt32(
                   desired_tilt_pulse, -MOTOR_MICRO_TILT_LIMIT_PULSES,
                   MOTOR_MICRO_TILT_LIMIT_PULSES);
+            }
+            else if ((target_x_deci_cm == TASK_POSITIVE_TARGET_DECI_CM)
+                     && (position_error > 0))
+            {
+              desired_tilt_pulse = ClampInt32(
+                  desired_tilt_pulse, -MOTOR_POSITIVE_APPROACH_TILT_LIMIT_PULSES,
+                  MOTOR_POSITIVE_APPROACH_TILT_LIMIT_PULSES);
             }
           }
           motor_tilt_target_pulse = desired_tilt_pulse;
