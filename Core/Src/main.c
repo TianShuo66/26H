@@ -49,6 +49,15 @@ typedef enum
   TASK_HOLD
 } TaskState_t;
 
+typedef enum
+{
+  FIXED_TASK_IDLE = 0,
+  FIXED_TASK_POSITIVE_DRIVE,
+  FIXED_TASK_POSITIVE_BRAKE,
+  FIXED_TASK_NEGATIVE_DRIVE,
+  FIXED_TASK_NEGATIVE_BRAKE
+} FixedTaskPhase_t;
+
 typedef struct
 {
   int32_t vref_gain_numerator;
@@ -156,7 +165,13 @@ typedef struct
 #define MOTOR_CAPTURE_BRAKE_LIMIT_PULSES 70L
 #define TASK_POSITIVE_TARGET_DECI_CM    50
 #define TASK_NEGATIVE_TARGET_DECI_CM   (-50)
-#define TASK_POSITIVE_REVERSE_DECI_CM   45
+// Key1 固定相位任务：O -> +5cm -> -5cm。
+#define TASK_FIXED_POSITIVE_DRIVE_TILT_PULSES (-65L)
+#define TASK_FIXED_NEGATIVE_DRIVE_TILT_PULSES 70L
+#define TASK_FIXED_NEGATIVE_BRAKE_TILT_PULSES (-70L)
+#define TASK_FIXED_POSITIVE_BRAKE_START_DECI_CM 31
+#define TASK_FIXED_POSITIVE_REACHED_DECI_CM 48
+#define TASK_FIXED_NEGATIVE_BRAKE_START_DECI_CM (-42)
 #define TASK_START_POSITION_TOLERANCE_DECI_CM 15
 #define TASK_SETTLED_POSITION_TOLERANCE_DECI_CM 8
 #define TASK_SETTLED_VELOCITY_DECI_CM_S 20L
@@ -624,6 +639,7 @@ int main(void)
   uint8_t capture_braking_active = 0U;
   CalibrationState_t calibration_state = CALIBRATION_IDLE;
   TaskState_t task_state = TASK_IDLE;
+  FixedTaskPhase_t fixed_task_phase = FIXED_TASK_IDLE;
 
   /* USER CODE BEGIN 1 */
 
@@ -818,11 +834,13 @@ int main(void)
         else if ((pressed_keys & 0x01U) != 0U)
         {
           if ((closed_loop_enabled != 0U)
-              && (task_state == TASK_HOLD)
+              && ((task_state == TASK_HOLD)
+                  || (task_state == TASK_TO_CENTER))
               && (target_x_deci_cm == TASK_CENTER_TARGET_DECI_CM))
           {
             target_x_deci_cm = TASK_POSITIVE_TARGET_DECI_CM;
             task_state = TASK_TO_POSITIVE;
+            fixed_task_phase = FIXED_TASK_POSITIVE_DRIVE;
             adaptive_tilt_pulse = TASK_POSITIVE_ADAPTIVE_TILT_INITIAL_PULSES;
             last_adaptive_tilt_update_ms = now_ms;
             task_start_ms = now_ms;
@@ -838,6 +856,7 @@ int main(void)
             closed_loop_enabled = 0U;
             previous_command_active = 0U;
             task_state = TASK_IDLE;
+            fixed_task_phase = FIXED_TASK_IDLE;
           }
           else
           {
@@ -852,6 +871,7 @@ int main(void)
           {
             target_x_deci_cm = TASK_CENTER_TARGET_DECI_CM;
             task_state = TASK_TO_CENTER;
+            fixed_task_phase = FIXED_TASK_IDLE;
             adaptive_tilt_pulse =
                 task_center_control_parameters.adaptive_tilt_initial_pulses;
             last_adaptive_tilt_update_ms = now_ms;
@@ -931,6 +951,7 @@ int main(void)
             if (task_start_requested != 0U)
             {
               task_state = TASK_TO_POSITIVE;
+              fixed_task_phase = FIXED_TASK_POSITIVE_DRIVE;
               task_start_ms = now_ms;
               task_settled_start_ms = 0U;
               task_hold_last_measurement_counter = last_vision_measurement_counter;
@@ -940,6 +961,7 @@ int main(void)
             else if (center_start_requested != 0U)
             {
               task_state = TASK_TO_CENTER;
+              fixed_task_phase = FIXED_TASK_IDLE;
               task_start_ms = now_ms;
               task_settled_start_ms = 0U;
               task_hold_last_measurement_counter = last_vision_measurement_counter;
@@ -948,6 +970,7 @@ int main(void)
             else
             {
               task_state = TASK_IDLE;
+              fixed_task_phase = FIXED_TASK_IDLE;
             }
           }
         }
@@ -1065,14 +1088,23 @@ int main(void)
           closed_loop_enabled = 0U;
           previous_command_active = 0U;
           task_state = TASK_IDLE;
+          fixed_task_phase = FIXED_TASK_IDLE;
           (void)Debug_PrintTaskEvent(TASK_EVENT_TIMEOUT,
                                      now_ms - task_start_ms);
         }
-        else if ((task_state == TASK_TO_POSITIVE)
-                 && (ball_x_est_deci_cm >= TASK_POSITIVE_REVERSE_DECI_CM))
+        else if ((fixed_task_phase == FIXED_TASK_POSITIVE_DRIVE)
+                 && (ball_x_est_deci_cm
+                     >= TASK_FIXED_POSITIVE_BRAKE_START_DECI_CM))
+        {
+          fixed_task_phase = FIXED_TASK_POSITIVE_BRAKE;
+        }
+        else if ((fixed_task_phase == FIXED_TASK_POSITIVE_BRAKE)
+                 && (ball_x_est_deci_cm
+                     >= TASK_FIXED_POSITIVE_REACHED_DECI_CM))
         {
           target_x_deci_cm = TASK_NEGATIVE_TARGET_DECI_CM;
           task_state = TASK_TO_NEGATIVE;
+          fixed_task_phase = FIXED_TASK_NEGATIVE_DRIVE;
           adaptive_tilt_pulse =
               task_negative_control_parameters.adaptive_tilt_initial_pulses;
           last_adaptive_tilt_update_ms = now_ms;
@@ -1081,6 +1113,12 @@ int main(void)
           task_reverse_boost_until_ms = now_ms + TASK_REVERSE_BOOST_MS;
           (void)Debug_PrintTaskEvent(TASK_EVENT_REVERSE,
                                      now_ms - task_start_ms);
+        }
+        else if ((fixed_task_phase == FIXED_TASK_NEGATIVE_DRIVE)
+                 && (ball_x_est_deci_cm
+                     <= TASK_FIXED_NEGATIVE_BRAKE_START_DECI_CM))
+        {
+          fixed_task_phase = FIXED_TASK_NEGATIVE_BRAKE;
         }
         else if (task_state == TASK_TO_NEGATIVE)
         {
@@ -1101,6 +1139,7 @@ int main(void)
                    >= TASK_NEGATIVE_HOLD_VERIFICATION_MS))
               {
                 task_state = TASK_HOLD;
+                fixed_task_phase = FIXED_TASK_IDLE;
                 motor_tilt_target_pulse = MotorPositionToPulse(
                     motor_position_counts, motor_zero_counts);
                 previous_command_active = 0U;
@@ -1254,6 +1293,25 @@ int main(void)
             {
               static_compensation_active = 0U;
             }
+          }
+          if (fixed_task_phase == FIXED_TASK_POSITIVE_DRIVE)
+          {
+            desired_tilt_pulse = TASK_FIXED_POSITIVE_DRIVE_TILT_PULSES;
+          }
+          else if ((fixed_task_phase == FIXED_TASK_POSITIVE_BRAKE)
+                   || (fixed_task_phase == FIXED_TASK_NEGATIVE_DRIVE))
+          {
+            desired_tilt_pulse = TASK_FIXED_NEGATIVE_DRIVE_TILT_PULSES;
+          }
+          else if (fixed_task_phase == FIXED_TASK_NEGATIVE_BRAKE)
+          {
+            desired_tilt_pulse = TASK_FIXED_NEGATIVE_BRAKE_TILT_PULSES;
+          }
+          if (fixed_task_phase != FIXED_TASK_IDLE)
+          {
+            static_compensation_active = 0U;
+            micro_adjust_active = 0U;
+            capture_braking_active = 0U;
           }
           motor_tilt_target_pulse = desired_tilt_pulse;
           step = desired_tilt_pulse - motor_pulse_est;
