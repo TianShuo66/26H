@@ -192,6 +192,8 @@ typedef struct
 #define TASK_NEGATIVE_CURVE_COMPENSATION_MIN_ERROR_DECI_CM (-40L)
 #define TASK_NEGATIVE_CURVE_COMPENSATION_MAX_ERROR_DECI_CM (-20L)
 #define TASK_NEGATIVE_CURVE_COMPENSATION_SPEED_DECI_CM_S 80L
+#define TASK_NEGATIVE_CRUISE_END_ERROR_DECI_CM (-20L)
+#define TASK_NEGATIVE_CRUISE_MIN_VREF_DECI_CM_S 80L
 #define TASK_MAX_DURATION_MS           10000U
 #define TASK_REVERSE_BOOST_MS            900U
 #define CALIBRATION_HOLD_MS            1000U
@@ -432,12 +434,29 @@ static int32_t CalculateVelocityReference(
       parameters->vref_limit_deci_cm_s);
 }
 
-static int32_t CalculateCascadeTilt(int32_t position_error_deci_cm,
-                                    int32_t velocity_deci_cm_per_s,
-                                    const TaskControlParameters_t *parameters)
+static int32_t CalculateTaskVelocityReference(
+    TaskState_t state, int32_t position_error_deci_cm,
+    const TaskControlParameters_t *parameters)
 {
   int32_t velocity_reference = CalculateVelocityReference(
       position_error_deci_cm, parameters);
+
+  if ((state == TASK_TO_NEGATIVE)
+      && (position_error_deci_cm <= TASK_NEGATIVE_CRUISE_END_ERROR_DECI_CM)
+      && (velocity_reference > -TASK_NEGATIVE_CRUISE_MIN_VREF_DECI_CM_S))
+  {
+    velocity_reference = -TASK_NEGATIVE_CRUISE_MIN_VREF_DECI_CM_S;
+  }
+  return velocity_reference;
+}
+
+static int32_t CalculateCascadeTilt(TaskState_t state,
+                                    int32_t position_error_deci_cm,
+                                    int32_t velocity_deci_cm_per_s,
+                                    const TaskControlParameters_t *parameters)
+{
+  int32_t velocity_reference = CalculateTaskVelocityReference(
+      state, position_error_deci_cm, parameters);
 
   return ClampInt32((parameters->tilt_gain_numerator
                      * (velocity_deci_cm_per_s - velocity_reference))
@@ -698,10 +717,11 @@ int main(void)
                                       (int32_t)target_x_deci_cm
                                           - ball_x_est_deci_cm,
                                       ball_velocity_deci_cm_per_s,
-                                      CalculateVelocityReference(
-                                      (int32_t)target_x_deci_cm
-                                          - ball_x_est_deci_cm,
-                                      GetTaskControlParameters(target_x_deci_cm)),
+                                      CalculateTaskVelocityReference(
+                                          task_state,
+                                          (int32_t)target_x_deci_cm
+                                              - ball_x_est_deci_cm,
+                                          GetTaskControlParameters(target_x_deci_cm)),
                                       adaptive_tilt_pulse,
                                       fast_tilt_tracking,
                                       static_compensation_active,
@@ -1139,6 +1159,7 @@ int main(void)
                                   <= control_parameters->micro_adjust_zone_deci_cm)
                                  || (use_center_fine_control != 0U)) ? 1U : 0U;
           desired_tilt_pulse = CalculateCascadeTilt(
+              task_state,
               position_error, ball_velocity_deci_cm_per_s,
               control_parameters);
           fine_static_pulse = (task_state == TASK_TO_NEGATIVE)
