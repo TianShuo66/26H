@@ -74,15 +74,17 @@ typedef enum
 // 短步加减速参数
 #define MOTOR_SHORT_STEP_ACCELERATION 100U
 // 方向反转时的反制动速度与加减速参数
-#define MOTOR_REVERSE_BRAKE_SPEED_RPM 1800U
-#define MOTOR_REVERSE_BRAKE_ACCELERATION 200U
+#define MOTOR_REVERSE_BRAKE_SPEED_RPM 2200U
+#define MOTOR_REVERSE_BRAKE_ACCELERATION 400U
 #define MOTOR_REVERSE_BRAKE_MAX_STEP_PULSES 24
+// 摆杆目标与实际位置相差较大时，持续使用快速跟随
+#define MOTOR_FAST_TRACK_ERROR_PULSES 24
 // 软件行程限位脉冲
 #define MOTOR_SOFTWARE_LIMIT_PULSES   230
 // 倾斜目标脉冲上限
 #define MOTOR_TILT_TARGET_LIMIT_PULSES 160
 // 静态维持倾斜脉冲
-#define MOTOR_STATIC_TILT_PULSES       100
+#define MOTOR_STATIC_TILT_PULSES       60
 // 静态偏置调节阈值脉冲
 #define MOTOR_STATIC_BIAS_LIMIT_PULSES 60
 // 静态偏置单次调节脉冲步长
@@ -349,6 +351,7 @@ int main(void)
   uint8_t motor_position_request_pending = 0U;
   uint8_t previous_command_direction = 0U;
   uint8_t previous_command_active = 0U;
+  uint8_t fast_tilt_tracking = 0U;
   CalibrationState_t calibration_state = CALIBRATION_IDLE;
   TaskState_t task_state = TASK_IDLE;
 
@@ -455,6 +458,7 @@ int main(void)
                                       (int32_t)target_x_deci_cm
                                           - ball_x_est_deci_cm,
                                       ball_velocity_deci_cm_per_s,
+                                      fast_tilt_tracking,
                                       motor_position_counts,
                                       position_centi_degrees,
                                       now_ms - closed_loop_start_ms);
@@ -593,6 +597,7 @@ int main(void)
             motor_pulse_est = 0;
             motor_tilt_target_pulse = 0;
             motor_static_bias_pulse = 0;
+            fast_tilt_tracking = 0U;
             last_static_bias_update = now_ms;
             motor_position_valid = 1U;
             last_motor_position_ms = now_ms;
@@ -866,6 +871,8 @@ int main(void)
           }
           motor_tilt_target_pulse = desired_tilt_pulse;
           step = desired_tilt_pulse - motor_pulse_est;
+          fast_tilt_tracking = (AbsInt32(step)
+                                >= MOTOR_FAST_TRACK_ERROR_PULSES) ? 1U : 0U;
           if (step == 0)
           {
             previous_command_active = 0U;
@@ -873,8 +880,9 @@ int main(void)
           else
           {
             direction = (step > 0) ? 0U : 1U;
-            fast_braking = ((task_state == TASK_TO_NEGATIVE)
-                             && (now_ms < task_reverse_boost_until_ms))
+            fast_braking = ((fast_tilt_tracking != 0U)
+                             || ((task_state == TASK_TO_NEGATIVE)
+                                 && (now_ms < task_reverse_boost_until_ms)))
                               ? 1U : 0U;
             if ((previous_command_active != 0U)
                 && (direction != previous_command_direction))

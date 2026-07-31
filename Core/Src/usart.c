@@ -687,6 +687,7 @@ HAL_StatusTypeDef Debug_PrintControlState(int16_t ball_x_deci_cm,
                                            int32_t motor_tilt_target_pulse,
                                            int32_t position_error_deci_cm,
                                            int32_t ball_velocity_deci_cm_per_s,
+                                           uint8_t fast_tilt_tracking,
                                            int32_t position_counts,
                                            int32_t position_centi_degrees,
                                            uint32_t task_elapsed_ms)
@@ -733,6 +734,13 @@ HAL_StatusTypeDef Debug_PrintControlState(int16_t ball_x_deci_cm,
   buffer[length++] = 'L';
   buffer[length++] = ',';
   Debug_AppendSignedInt32(buffer, &length, ball_velocity_deci_cm_per_s);
+  buffer[length++] = ',';
+  buffer[length++] = 'F';
+  buffer[length++] = 'A';
+  buffer[length++] = 'S';
+  buffer[length++] = 'T';
+  buffer[length++] = ',';
+  Debug_AppendUnsignedInt32(buffer, &length, fast_tilt_tracking);
   buffer[length++] = ',';
   buffer[length++] = 'P';
   buffer[length++] = 'U';
