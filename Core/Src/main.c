@@ -1090,8 +1090,10 @@ int main(void)
                   != task_hold_last_measurement_counter))
           {
             task_hold_last_measurement_counter = last_vision_measurement_counter;
-            if (AbsInt32((int32_t)ball_x_est_deci_cm - target_x_deci_cm)
-                <= TASK_NEGATIVE_HOLD_POSITION_TOLERANCE_DECI_CM)
+            if ((AbsInt32((int32_t)ball_x_est_deci_cm - target_x_deci_cm)
+                 <= TASK_NEGATIVE_HOLD_POSITION_TOLERANCE_DECI_CM)
+                && (AbsInt32(ball_velocity_deci_cm_per_s)
+                    <= TASK_SETTLED_VELOCITY_DECI_CM_S))
             {
               if (task_settled_start_ms == 0U)
               {
