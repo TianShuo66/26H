@@ -214,7 +214,7 @@ typedef struct
 // Key1 在 +5cm 折返后使用固定负向推进与制动。
 #define TASK_NEGATIVE_FIXED_DRIVE_TILT_PULSES 35L
 #define TASK_NEGATIVE_FIXED_BRAKE_TILT_PULSES (-70L)
-#define TASK_NEGATIVE_FIXED_BRAKE_START_DECI_CM (-35)
+#define TASK_NEGATIVE_FIXED_BRAKE_DELAY_MS 1500U
 #define TASK_MAX_DURATION_MS           5000U
 #define TASK_REVERSE_BOOST_MS            900U
 #define CALIBRATION_HOLD_MS            1000U
@@ -608,6 +608,7 @@ int main(void)
   uint32_t task_settled_start_ms = 0U;
   uint32_t task_hold_last_measurement_counter = 0U;
   uint32_t task_reverse_boost_until_ms = 0U;
+  uint32_t negative_fixed_phase_start_ms = 0U;
   uint32_t calibration_start_ms = 0U;
   uint32_t calibration_phase_start_ms = 0U;
   int32_t motor_position_counts = 0;
@@ -851,6 +852,7 @@ int main(void)
             previous_command_active = 0U;
             task_state = TASK_IDLE;
             negative_fixed_phase = NEGATIVE_FIXED_DISABLED;
+            negative_fixed_phase_start_ms = 0U;
           }
           else
           {
@@ -866,6 +868,7 @@ int main(void)
             target_x_deci_cm = TASK_CENTER_TARGET_DECI_CM;
             task_state = TASK_TO_CENTER;
             negative_fixed_phase = NEGATIVE_FIXED_DISABLED;
+            negative_fixed_phase_start_ms = 0U;
             adaptive_tilt_pulse =
                 task_center_control_parameters.adaptive_tilt_initial_pulses;
             last_adaptive_tilt_update_ms = now_ms;
@@ -946,6 +949,7 @@ int main(void)
             {
               task_state = TASK_TO_POSITIVE;
               negative_fixed_phase = NEGATIVE_FIXED_DISABLED;
+              negative_fixed_phase_start_ms = 0U;
               task_start_ms = now_ms;
               task_settled_start_ms = 0U;
               task_hold_last_measurement_counter = last_vision_measurement_counter;
@@ -956,6 +960,7 @@ int main(void)
             {
               task_state = TASK_TO_CENTER;
               negative_fixed_phase = NEGATIVE_FIXED_DISABLED;
+              negative_fixed_phase_start_ms = 0U;
               task_start_ms = now_ms;
               task_settled_start_ms = 0U;
               task_hold_last_measurement_counter = last_vision_measurement_counter;
@@ -965,6 +970,7 @@ int main(void)
             {
               task_state = TASK_IDLE;
               negative_fixed_phase = NEGATIVE_FIXED_DISABLED;
+              negative_fixed_phase_start_ms = 0U;
             }
           }
         }
@@ -1083,6 +1089,7 @@ int main(void)
           previous_command_active = 0U;
           task_state = TASK_IDLE;
           negative_fixed_phase = NEGATIVE_FIXED_DISABLED;
+          negative_fixed_phase_start_ms = 0U;
           (void)Debug_PrintTaskEvent(TASK_EVENT_TIMEOUT,
                                      now_ms - task_start_ms);
         }
@@ -1092,6 +1099,7 @@ int main(void)
           target_x_deci_cm = TASK_NEGATIVE_TARGET_DECI_CM;
           task_state = TASK_TO_NEGATIVE;
           negative_fixed_phase = NEGATIVE_FIXED_DRIVE;
+          negative_fixed_phase_start_ms = now_ms;
           adaptive_tilt_pulse =
               task_negative_control_parameters.adaptive_tilt_initial_pulses;
           last_adaptive_tilt_update_ms = now_ms;
@@ -1103,8 +1111,8 @@ int main(void)
         }
         else if ((task_state == TASK_TO_NEGATIVE)
                  && (negative_fixed_phase == NEGATIVE_FIXED_DRIVE)
-                 && (ball_x_est_deci_cm
-                     <= TASK_NEGATIVE_FIXED_BRAKE_START_DECI_CM))
+                 && ((now_ms - negative_fixed_phase_start_ms)
+                     >= TASK_NEGATIVE_FIXED_BRAKE_DELAY_MS))
         {
           negative_fixed_phase = NEGATIVE_FIXED_BRAKE;
         }
@@ -1130,6 +1138,7 @@ int main(void)
               {
                 task_state = TASK_HOLD;
                 negative_fixed_phase = NEGATIVE_FIXED_DISABLED;
+                negative_fixed_phase_start_ms = 0U;
                 motor_tilt_target_pulse = MotorPositionToPulse(
                     motor_position_counts, motor_zero_counts);
                 previous_command_active = 0U;
