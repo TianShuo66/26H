@@ -125,6 +125,10 @@ typedef enum
 // 进入目标 1.5cm 内后的微调范围与最大倾角
 #define BALL_MICRO_ADJUST_ZONE_DECI_CM 15
 #define MOTOR_MICRO_TILT_LIMIT_PULSES 24
+// 微调区静摩擦起步脉冲：仅短时使用，随后恢复小倾角微调
+#define MOTOR_MICRO_KICK_TILT_PULSES 60
+#define MOTOR_MICRO_KICK_DURATION_MS 160U
+#define MOTOR_MICRO_KICK_COOLDOWN_MS 360U
 #define TASK_POSITIVE_TARGET_DECI_CM    50
 #define TASK_NEGATIVE_TARGET_DECI_CM   (-50)
 #define TASK_POSITIVE_REVERSE_DECI_CM   45
@@ -341,6 +345,8 @@ int main(void)
   uint32_t last_ball_sample_ms = 0U;
   uint32_t last_static_bias_update = 0U;
   uint32_t ball_still_start_ms = 0U;
+  uint32_t micro_kick_until_ms = 0U;
+  uint32_t micro_kick_next_ms = 0U;
   uint32_t task_start_ms = 0U;
   uint32_t task_settled_start_ms = 0U;
   uint32_t task_reverse_boost_until_ms = 0U;
@@ -351,6 +357,7 @@ int main(void)
   int32_t motor_pulse_est = 0;
   int32_t motor_tilt_target_pulse = 0;
   int32_t motor_static_bias_pulse = 0;
+  int32_t micro_kick_target_pulse = 0;
   int32_t ball_velocity_deci_cm_per_s = 0;
   int16_t ball_x_est_deci_cm = 0;
   int16_t target_x_deci_cm = 0;
@@ -613,6 +620,9 @@ int main(void)
             motor_pulse_est = 0;
             motor_tilt_target_pulse = 0;
             motor_static_bias_pulse = 0;
+            micro_kick_target_pulse = 0;
+            micro_kick_until_ms = 0U;
+            micro_kick_next_ms = 0U;
             fast_tilt_tracking = 0U;
             static_compensation_active = 0U;
             micro_adjust_active = 0U;
@@ -821,6 +831,7 @@ int main(void)
           int32_t step;
           int32_t step_limit;
           int32_t velocity_gain_numerator;
+          uint8_t micro_kick_active;
           uint8_t direction;
           uint8_t fast_braking;
           uint8_t static_ready;
@@ -844,6 +855,32 @@ int main(void)
           static_compensation_active = 0U;
           micro_adjust_active = (AbsInt32(position_error)
                                  <= BALL_MICRO_ADJUST_ZONE_DECI_CM) ? 1U : 0U;
+          if ((micro_kick_until_ms != 0U) && (now_ms >= micro_kick_until_ms))
+          {
+            micro_kick_until_ms = 0U;
+            micro_kick_target_pulse = 0;
+          }
+          if ((micro_adjust_active == 0U)
+              || (AbsInt32(position_error) <= BALL_POSITION_DEADBAND_DECI_CM)
+              || (((position_error < 0) && (micro_kick_target_pulse < 0))
+                  || ((position_error > 0) && (micro_kick_target_pulse > 0))))
+          {
+            micro_kick_until_ms = 0U;
+            micro_kick_target_pulse = 0;
+          }
+          if ((micro_kick_target_pulse == 0)
+              && (micro_adjust_active != 0U)
+              && (AbsInt32(position_error) > BALL_POSITION_DEADBAND_DECI_CM)
+              && (static_ready != 0U)
+              && (now_ms >= micro_kick_next_ms))
+          {
+            micro_kick_target_pulse = (position_error < 0)
+                                    ? MOTOR_MICRO_KICK_TILT_PULSES
+                                    : -MOTOR_MICRO_KICK_TILT_PULSES;
+            micro_kick_until_ms = now_ms + MOTOR_MICRO_KICK_DURATION_MS;
+            micro_kick_next_ms = now_ms + MOTOR_MICRO_KICK_COOLDOWN_MS;
+          }
+          micro_kick_active = (micro_kick_target_pulse != 0) ? 1U : 0U;
           velocity_gain_numerator = BALL_VELOCITY_GAIN_NUMERATOR;
           if ((target_x_deci_cm == TASK_POSITIVE_TARGET_DECI_CM)
               && (position_error > 0)
@@ -925,6 +962,11 @@ int main(void)
               desired_tilt_pulse = ClampInt32(
                   desired_tilt_pulse, -MOTOR_MICRO_TILT_LIMIT_PULSES,
                   MOTOR_MICRO_TILT_LIMIT_PULSES);
+              if (micro_kick_active != 0U)
+              {
+                desired_tilt_pulse = micro_kick_target_pulse;
+                static_compensation_active = 1U;
+              }
             }
             else if ((target_x_deci_cm == TASK_POSITIVE_TARGET_DECI_CM)
                      && (position_error > 0))
