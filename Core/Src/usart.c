@@ -688,6 +688,7 @@ HAL_StatusTypeDef Debug_PrintControlState(int16_t ball_x_deci_cm,
                                            int32_t predicted_stop_distance_deci_cm,
                                            int32_t predicted_error_deci_cm,
                                            uint8_t predicted_brake_active,
+                                           uint8_t recovery_active,
                                            int32_t position_counts,
                                            int32_t position_centi_degrees,
                                            uint32_t task_elapsed_ms)
@@ -753,6 +754,17 @@ HAL_StatusTypeDef Debug_PrintControlState(int16_t ball_x_deci_cm,
   buffer[length++] = 'E';
   buffer[length++] = ',';
   Debug_AppendUnsignedInt32(buffer, &length, predicted_brake_active);
+  buffer[length++] = ',';
+  buffer[length++] = 'R';
+  buffer[length++] = 'E';
+  buffer[length++] = 'C';
+  buffer[length++] = 'O';
+  buffer[length++] = 'V';
+  buffer[length++] = 'E';
+  buffer[length++] = 'R';
+  buffer[length++] = 'Y';
+  buffer[length++] = ',';
+  Debug_AppendUnsignedInt32(buffer, &length, recovery_active);
   buffer[length++] = ',';
   buffer[length++] = 'P';
   buffer[length++] = 'U';

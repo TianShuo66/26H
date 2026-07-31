@@ -116,11 +116,15 @@ typedef enum
 // 预测停车距离上限，避免异常视觉速度造成过大的反向指令，单位：0.1cm
 #define MODEL_MAX_STOP_DISTANCE_DECI_CM 240L
 // 预测制动的摆杆反向与机构响应延迟，单位：ms
-#define MODEL_BRAKE_ACTUATOR_DELAY_MS 320L
+#define MODEL_BRAKE_ACTUATOR_DELAY_MS 220L
 // 预测制动额外安全距离，单位：0.1cm
-#define MODEL_BRAKE_TRIGGER_MARGIN_DECI_CM 4L
+#define MODEL_BRAKE_TRIGGER_MARGIN_DECI_CM 2L
 // 非制动的终端区摆杆目标限制，避免在目的地附近反复拉动钢球
 #define MOTOR_TERMINAL_TILT_LIMIT_PULSES 80
+// 钢球越过目标后快速拉回的最小反向倾角脉冲
+#define MOTOR_RECOVERY_TILT_PULSES 100
+// 启用快速拉回的最大目标距离，单位：0.1cm
+#define MODEL_RECOVERY_ZONE_DECI_CM 25
 #define TASK_POSITIVE_TARGET_DECI_CM    50
 #define TASK_NEGATIVE_TARGET_DECI_CM   (-50)
 #define TASK_POSITIVE_REVERSE_DECI_CM   45
@@ -380,6 +384,7 @@ int main(void)
   uint8_t previous_command_direction = 0U;
   uint8_t previous_command_active = 0U;
   uint8_t predicted_brake_active = 0U;
+  uint8_t recovery_active = 0U;
   CalibrationState_t calibration_state = CALIBRATION_IDLE;
   TaskState_t task_state = TASK_IDLE;
 
@@ -486,6 +491,7 @@ int main(void)
                                       predicted_stop_distance_deci_cm,
                                       predicted_error_deci_cm,
                                       predicted_brake_active,
+                                      recovery_active,
                                       motor_position_counts,
                                       position_centi_degrees,
                                       now_ms - closed_loop_start_ms);
@@ -627,6 +633,7 @@ int main(void)
             predicted_stop_distance_deci_cm = 0;
             predicted_error_deci_cm = 0;
             predicted_brake_active = 0U;
+            recovery_active = 0U;
             last_static_bias_update = now_ms;
             motor_position_valid = 1U;
             last_motor_position_ms = now_ms;
@@ -834,6 +841,7 @@ int main(void)
           int32_t brake_trigger_distance_deci_cm;
           uint8_t direction;
           uint8_t fast_braking;
+          uint8_t moving_away_from_target;
           uint8_t moving_toward_target;
 
           last_control_update = now_ms;
@@ -845,8 +853,18 @@ int main(void)
                                       && (ball_velocity_deci_cm_per_s
                                           <= -MODEL_PREDICT_MIN_VELOCITY_DECI_CM_S)))
                                    ? 1U : 0U;
+          moving_away_from_target = (((position_error > 0)
+                                      && (ball_velocity_deci_cm_per_s
+                                          <= -MODEL_PREDICT_MIN_VELOCITY_DECI_CM_S))
+                                     || ((position_error < 0)
+                                         && (ball_velocity_deci_cm_per_s
+                                             >= MODEL_PREDICT_MIN_VELOCITY_DECI_CM_S)))
+                                      ? 1U : 0U;
           predicted_stop_distance_deci_cm = 0;
           predicted_brake_active = 0U;
+          recovery_active = ((moving_away_from_target != 0U)
+                             && (remaining_distance_deci_cm
+                                 <= MODEL_RECOVERY_ZONE_DECI_CM)) ? 1U : 0U;
           if (AbsInt32(ball_velocity_deci_cm_per_s)
               >= MODEL_PREDICT_MIN_VELOCITY_DECI_CM_S)
           {
@@ -924,8 +942,16 @@ int main(void)
             desired_tilt_pulse = ClampInt32(desired_tilt_pulse,
                                              -MOTOR_TILT_TARGET_LIMIT_PULSES,
                                              MOTOR_TILT_TARGET_LIMIT_PULSES);
+            if ((recovery_active != 0U)
+                && (AbsInt32(desired_tilt_pulse) < MOTOR_RECOVERY_TILT_PULSES))
+            {
+              desired_tilt_pulse = (position_error < 0)
+                                 ? MOTOR_RECOVERY_TILT_PULSES
+                                 : -MOTOR_RECOVERY_TILT_PULSES;
+            }
             if ((remaining_distance_deci_cm <= BALL_POSITION_DEADBAND_DECI_CM)
-                && (predicted_brake_active == 0U))
+                && (predicted_brake_active == 0U)
+                && (recovery_active == 0U))
             {
               desired_tilt_pulse = ClampInt32(
                   desired_tilt_pulse, -MOTOR_TERMINAL_TILT_LIMIT_PULSES,
@@ -934,6 +960,7 @@ int main(void)
           }
           motor_tilt_target_pulse = desired_tilt_pulse;
           fast_braking = ((predicted_brake_active != 0U)
+                          || (recovery_active != 0U)
                           || ((task_state == TASK_TO_NEGATIVE)
                               && (now_ms < task_reverse_boost_until_ms)))
                             ? 1U : 0U;
