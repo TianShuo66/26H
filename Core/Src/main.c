@@ -125,9 +125,14 @@ typedef enum
 // 提前进入终端制动区，防止带着高速跨过 +/-0.8cm 边界
 #define BALL_CAPTURE_BRAKE_ZONE_DECI_CM 20L
 #define BALL_CAPTURE_SPEED_LIMIT_DECI_CM_S 15L
+#define BALL_CAPTURE_RELEASE_SPEED_DECI_CM_S 10L
 #define MOTOR_CAPTURE_BRAKE_BASE_PULSES 35L
 #define MOTOR_CAPTURE_BRAKE_GAIN_NUMERATOR 2L
 #define MOTOR_CAPTURE_BRAKE_LIMIT_PULSES 70L
+// -5cm 端的实测惯性更大，提前更远距离并提高制动力
+#define BALL_NEGATIVE_CAPTURE_BRAKE_ZONE_DECI_CM 35L
+#define MOTOR_NEGATIVE_CAPTURE_BRAKE_BASE_PULSES 55L
+#define MOTOR_NEGATIVE_CAPTURE_BRAKE_LIMIT_PULSES 120L
 #define TASK_POSITIVE_TARGET_DECI_CM    50
 #define TASK_NEGATIVE_TARGET_DECI_CM   (-50)
 #define TASK_POSITIVE_REVERSE_DECI_CM   45
@@ -385,25 +390,51 @@ static int32_t ApplyAdaptiveTilt(int32_t desired_tilt_pulse,
 static int32_t ApplyCaptureBrake(int32_t desired_tilt_pulse,
                                  int32_t position_error_deci_cm,
                                  int32_t velocity_deci_cm_per_s,
-                                 uint8_t *capture_braking_active)
+                                 int16_t target_x_deci_cm,
+                                 uint8_t *capture_braking_active,
+                                 uint8_t *capture_brake_latched)
 {
+  int32_t brake_zone = BALL_CAPTURE_BRAKE_ZONE_DECI_CM;
+  int32_t brake_base = MOTOR_CAPTURE_BRAKE_BASE_PULSES;
+  int32_t brake_limit = MOTOR_CAPTURE_BRAKE_LIMIT_PULSES;
   int32_t speed;
   int32_t brake_tilt;
 
-  if ((AbsInt32(position_error_deci_cm) > BALL_CAPTURE_BRAKE_ZONE_DECI_CM)
-      || (AbsInt32(velocity_deci_cm_per_s)
-          <= BALL_CAPTURE_SPEED_LIMIT_DECI_CM_S)
+  if (target_x_deci_cm == TASK_NEGATIVE_TARGET_DECI_CM)
+  {
+    brake_zone = BALL_NEGATIVE_CAPTURE_BRAKE_ZONE_DECI_CM;
+    brake_base = MOTOR_NEGATIVE_CAPTURE_BRAKE_BASE_PULSES;
+    brake_limit = MOTOR_NEGATIVE_CAPTURE_BRAKE_LIMIT_PULSES;
+  }
+  speed = AbsInt32(velocity_deci_cm_per_s);
+  if (*capture_brake_latched != 0U)
+  {
+    if (speed <= BALL_CAPTURE_RELEASE_SPEED_DECI_CM_S)
+    {
+      *capture_brake_latched = 0U;
+    }
+    else
+    {
+      brake_tilt = ClampInt32(brake_base
+                   + ((speed - BALL_CAPTURE_SPEED_LIMIT_DECI_CM_S)
+                      * MOTOR_CAPTURE_BRAKE_GAIN_NUMERATOR),
+                   brake_base, brake_limit);
+      *capture_braking_active = 1U;
+      return (velocity_deci_cm_per_s > 0) ? brake_tilt : -brake_tilt;
+    }
+  }
+  if ((AbsInt32(position_error_deci_cm) > brake_zone)
+      || (speed <= BALL_CAPTURE_SPEED_LIMIT_DECI_CM_S)
       || (((position_error_deci_cm > 0) && (velocity_deci_cm_per_s <= 0))
           || ((position_error_deci_cm < 0) && (velocity_deci_cm_per_s >= 0))))
   {
     return desired_tilt_pulse;
   }
-  speed = AbsInt32(velocity_deci_cm_per_s);
-  brake_tilt = ClampInt32(MOTOR_CAPTURE_BRAKE_BASE_PULSES
+  brake_tilt = ClampInt32(brake_base
                + ((speed - BALL_CAPTURE_SPEED_LIMIT_DECI_CM_S)
                   * MOTOR_CAPTURE_BRAKE_GAIN_NUMERATOR),
-               MOTOR_CAPTURE_BRAKE_BASE_PULSES,
-               MOTOR_CAPTURE_BRAKE_LIMIT_PULSES);
+               brake_base, brake_limit);
+  *capture_brake_latched = 1U;
   *capture_braking_active = 1U;
   return (velocity_deci_cm_per_s > 0) ? brake_tilt : -brake_tilt;
 }
@@ -474,6 +505,7 @@ int main(void)
   uint8_t static_compensation_active = 0U;
   uint8_t micro_adjust_active = 0U;
   uint8_t capture_braking_active = 0U;
+  uint8_t capture_brake_latched = 0U;
   CalibrationState_t calibration_state = CALIBRATION_IDLE;
   TaskState_t task_state = TASK_IDLE;
 
@@ -731,6 +763,7 @@ int main(void)
             static_compensation_active = 0U;
             micro_adjust_active = 0U;
             capture_braking_active = 0U;
+            capture_brake_latched = 0U;
             last_adaptive_tilt_update_ms = now_ms;
             motor_position_valid = 1U;
             last_motor_position_ms = now_ms;
@@ -975,7 +1008,8 @@ int main(void)
           }
           desired_tilt_pulse = ApplyCaptureBrake(
               desired_tilt_pulse, position_error, ball_velocity_deci_cm_per_s,
-              &capture_braking_active);
+              target_x_deci_cm, &capture_braking_active,
+              &capture_brake_latched);
           if (capture_braking_active != 0U)
           {
             static_compensation_active = 0U;
