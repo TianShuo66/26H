@@ -127,17 +127,22 @@ typedef enum
 #define TASK_POSITIVE_LAUNCH_ADAPTIVE_LIMIT_PULSES 120L
 // 终端稳定范围允许在目标 +/-0.8cm 内小幅摆动
 #define BALL_MICRO_ADJUST_ZONE_DECI_CM 8L
-// 提前进入终端制动区，防止带着高速跨过 +/-0.8cm 边界
+// +5cm 保持原有终端制动参数
 #define BALL_CAPTURE_BRAKE_ZONE_DECI_CM 20L
 #define BALL_CAPTURE_SPEED_LIMIT_DECI_CM_S 15L
 #define BALL_CAPTURE_RELEASE_SPEED_DECI_CM_S 10L
 #define MOTOR_CAPTURE_BRAKE_BASE_PULSES 35L
 #define MOTOR_CAPTURE_BRAKE_GAIN_NUMERATOR 2L
 #define MOTOR_CAPTURE_BRAKE_LIMIT_PULSES 70L
-// -5cm 端的实测惯性更大，需要更早进入终端制动
-#define BALL_NEGATIVE_CAPTURE_BRAKE_ZONE_DECI_CM 35L
-#define MOTOR_NEGATIVE_CAPTURE_BRAKE_BASE_PULSES 35L
-#define MOTOR_NEGATIVE_CAPTURE_BRAKE_LIMIT_PULSES 70L
+// 0/-5cm 采用较弱的末端制动，避免在目标外侧被反向推出
+#define BALL_CENTER_CAPTURE_BRAKE_ZONE_DECI_CM 25L
+#define MOTOR_CENTER_CAPTURE_BRAKE_BASE_PULSES 25L
+#define MOTOR_CENTER_CAPTURE_BRAKE_LIMIT_PULSES 50L
+#define BALL_NEGATIVE_CAPTURE_BRAKE_ZONE_DECI_CM 15L
+#define MOTOR_NEGATIVE_CAPTURE_BRAKE_BASE_PULSES 25L
+#define MOTOR_NEGATIVE_CAPTURE_BRAKE_LIMIT_PULSES 50L
+// 0/-5cm 进入末端附近后不再累积静摩擦补偿
+#define BALL_NONPOSITIVE_DAMP_ZONE_DECI_CM 25L
 #define TASK_POSITIVE_TARGET_DECI_CM    50
 #define TASK_NEGATIVE_TARGET_DECI_CM   (-50)
 #define TASK_POSITIVE_REVERSE_DECI_CM   45
@@ -420,9 +425,16 @@ static int32_t ApplyCaptureBrake(int32_t desired_tilt_pulse,
     brake_base = MOTOR_NEGATIVE_CAPTURE_BRAKE_BASE_PULSES;
     brake_limit = MOTOR_NEGATIVE_CAPTURE_BRAKE_LIMIT_PULSES;
   }
+  else if (target_x_deci_cm == 0)
+  {
+    brake_zone = BALL_CENTER_CAPTURE_BRAKE_ZONE_DECI_CM;
+    brake_base = MOTOR_CENTER_CAPTURE_BRAKE_BASE_PULSES;
+    brake_limit = MOTOR_CENTER_CAPTURE_BRAKE_LIMIT_PULSES;
+  }
   speed = AbsInt32(velocity_deci_cm_per_s);
   /* Only the -5cm task endpoint keeps braking after the ball crosses target. */
-  if (retain_capture_brake == 0U)
+  if ((retain_capture_brake == 0U)
+      || (AbsInt32(position_error_deci_cm) > brake_zone))
   {
     *capture_brake_latched = 0U;
   }
@@ -1022,6 +1034,13 @@ int main(void)
               (use_positive_adaptive != 0U)
                 ? TASK_POSITIVE_LAUNCH_ADAPTIVE_LIMIT_PULSES
                 : BALL_ADAPTIVE_TILT_LIMIT_PULSES;
+          if ((use_positive_adaptive == 0U)
+              && (AbsInt32(position_error)
+                  <= BALL_NONPOSITIVE_DAMP_ZONE_DECI_CM))
+          {
+            adaptive_tilt_pulse = BALL_ADAPTIVE_TILT_INITIAL_PULSES;
+            last_adaptive_tilt_update_ms = now_ms;
+          }
           if (IsAdaptiveTiltNeeded(position_error,
                                    ball_velocity_deci_cm_per_s,
                                    use_positive_adaptive) != 0U)
