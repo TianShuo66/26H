@@ -145,6 +145,11 @@ typedef enum
 #define TASK_HOLD_VELOCITY_DECI_CM_S 5L
 #define TASK_HOLD_VERIFICATION_MS     800U
 #define TASK_HOLD_MIN_VALID_SAMPLES     12U
+// 回中心最后 1.5cm 使用小倾角微调，避免通用起步补偿来回累积。
+#define TASK_CENTER_FINE_ZONE_DECI_CM   15L
+#define TASK_CENTER_FINE_TILT_LIMIT_PULSES 18L
+#define TASK_CENTER_FINE_STATIC_PULSES  15L
+#define TASK_CENTER_FINE_STATIC_SPEED_DECI_CM_S 8L
 #define TASK_MAX_DURATION_MS           5000U
 #define TASK_REVERSE_BOOST_MS            900U
 #define CALIBRATION_HOLD_MS            1000U
@@ -1039,12 +1044,18 @@ int main(void)
           uint8_t direction;
           uint8_t fast_braking;
           uint8_t use_positive_adaptive;
+          uint8_t use_center_fine_control;
 
           last_control_update = now_ms;
           static_compensation_active = 0U;
           capture_braking_active = 0U;
-          micro_adjust_active = (AbsInt32(position_error)
-                                 <= BALL_MICRO_ADJUST_ZONE_DECI_CM) ? 1U : 0U;
+          use_center_fine_control =
+              ((task_state == TASK_TO_CENTER)
+               && (AbsInt32(position_error)
+                   <= TASK_CENTER_FINE_ZONE_DECI_CM)) ? 1U : 0U;
+          micro_adjust_active = ((AbsInt32(position_error)
+                                  <= BALL_MICRO_ADJUST_ZONE_DECI_CM)
+                                 || (use_center_fine_control != 0U)) ? 1U : 0U;
           desired_tilt_pulse = CalculateCascadeTilt(
               position_error, ball_velocity_deci_cm_per_s);
           use_positive_adaptive =
@@ -1064,9 +1075,27 @@ int main(void)
               (use_positive_adaptive != 0U)
                 ? TASK_POSITIVE_LAUNCH_ADAPTIVE_LIMIT_PULSES
                 : BALL_ADAPTIVE_TILT_LIMIT_PULSES;
-          if (IsAdaptiveTiltNeeded(position_error,
-                                   ball_velocity_deci_cm_per_s,
-                                   use_positive_adaptive) != 0U)
+          if (use_center_fine_control != 0U)
+          {
+            /* Keep the final approach smooth: no accumulating static tilt. */
+            adaptive_tilt_pulse = TASK_CENTER_FINE_STATIC_PULSES;
+            desired_tilt_pulse = ClampInt32(desired_tilt_pulse,
+                                   -TASK_CENTER_FINE_TILT_LIMIT_PULSES,
+                                   TASK_CENTER_FINE_TILT_LIMIT_PULSES);
+            if ((AbsInt32(position_error)
+                 > TASK_HOLD_POSITION_TOLERANCE_DECI_CM)
+                && (AbsInt32(ball_velocity_deci_cm_per_s)
+                    <= TASK_CENTER_FINE_STATIC_SPEED_DECI_CM_S))
+            {
+              desired_tilt_pulse = ApplyAdaptiveTilt(
+                  desired_tilt_pulse, position_error,
+                  TASK_CENTER_FINE_STATIC_PULSES,
+                  &static_compensation_active);
+            }
+          }
+          else if (IsAdaptiveTiltNeeded(position_error,
+                                        ball_velocity_deci_cm_per_s,
+                                        use_positive_adaptive) != 0U)
           {
             if ((now_ms - last_adaptive_tilt_update_ms)
                 >= adaptive_tilt_period_ms)
