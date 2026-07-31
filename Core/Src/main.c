@@ -80,8 +80,8 @@ typedef struct
 #define MOTOR_PULSES_PER_REVOLUTION 3200U
 // 电机位置反馈寄存器一圈计数值（编码器/总线位置单位）
 #define MOTOR_POSITION_COUNTS_PER_REVOLUTION 65536L
-// ZDT 显示 -14.8 度时机械水平，对应位置反馈约 -2696 counts。
-#define MOTOR_FIXED_ZERO_COUNTS           (-2696L)
+// ZDT 显示 -7.5 度时机械水平，对应位置反馈约 -1365 counts。
+#define MOTOR_FIXED_ZERO_COUNTS           (-1365L)
 // 电机位置查询周期 40ms
 #define MOTOR_POSITION_QUERY_PERIOD_MS 40U
 // 位置数据最大有效时长，超过视为过期 120ms
