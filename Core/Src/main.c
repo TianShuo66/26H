@@ -150,6 +150,8 @@ typedef enum
 #define TASK_CENTER_FINE_TILT_LIMIT_PULSES 18L
 #define TASK_CENTER_FINE_STATIC_PULSES  15L
 #define TASK_CENTER_FINE_STATIC_SPEED_DECI_CM_S 8L
+#define TASK_CENTER_FINE_ENTRY_SPEED_DECI_CM_S 30L
+#define TASK_CENTER_TILT_LIMIT_PULSES 45L
 // 终端卡滞时以真实视觉位置进展而非估计速度决定是否加大倾角。
 #define TASK_TERMINAL_PROGRESS_DECI_CM  1L
 #define TASK_TERMINAL_STALL_PERIOD_MS   320U
@@ -1164,7 +1166,9 @@ int main(void)
           use_center_fine_control =
               ((task_state == TASK_TO_CENTER)
                && (AbsInt32(position_error)
-                   <= TASK_CENTER_FINE_ZONE_DECI_CM)) ? 1U : 0U;
+                   <= TASK_CENTER_FINE_ZONE_DECI_CM)
+               && (AbsInt32(ball_velocity_deci_cm_per_s)
+                   <= TASK_CENTER_FINE_ENTRY_SPEED_DECI_CM_S)) ? 1U : 0U;
           micro_adjust_active = ((AbsInt32(position_error)
                                   <= BALL_MICRO_ADJUST_ZONE_DECI_CM)
                                  || (use_center_fine_control != 0U)) ? 1U : 0U;
@@ -1262,6 +1266,12 @@ int main(void)
                 desired_tilt_pulse, position_error,
                 task_terminal_stall_tilt_pulse,
                 &static_compensation_active);
+          }
+          else if (task_state == TASK_TO_CENTER)
+          {
+            desired_tilt_pulse = ClampInt32(desired_tilt_pulse,
+                                   -TASK_CENTER_TILT_LIMIT_PULSES,
+                                   TASK_CENTER_TILT_LIMIT_PULSES);
           }
           motor_tilt_target_pulse = desired_tilt_pulse;
           step = desired_tilt_pulse - motor_pulse_est;
