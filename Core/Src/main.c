@@ -187,25 +187,6 @@ typedef struct
 #define TASK_CENTER_CAPTURE_BRAKE_BASE_PULSES 35L
 #define TASK_CENTER_CAPTURE_BRAKE_GAIN_NUMERATOR 2L
 #define TASK_CENTER_CAPTURE_BRAKE_LIMIT_PULSES 70L
-// -5cm 闭环参数
-#define TASK_NEGATIVE_VREF_GAIN_NUMERATOR 13L
-#define TASK_NEGATIVE_VREF_GAIN_DIVISOR 10L
-#define TASK_NEGATIVE_VREF_LIMIT_DECI_CM_S 100L
-#define TASK_NEGATIVE_TILT_GAIN_NUMERATOR 45L
-#define TASK_NEGATIVE_TILT_GAIN_DIVISOR 100L
-#define TASK_NEGATIVE_MICRO_ADJUST_ZONE_DECI_CM 8L
-#define TASK_NEGATIVE_ADAPTIVE_MOTION_DECI_CM_S 30L
-#define TASK_NEGATIVE_ADAPTIVE_TILT_INITIAL_PULSES 45L
-#define TASK_NEGATIVE_ADAPTIVE_TILT_STEP_PULSES 10L
-#define TASK_NEGATIVE_ADAPTIVE_TILT_LIMIT_PULSES 100L
-#define TASK_NEGATIVE_ADAPTIVE_TILT_PERIOD_MS 120U
-#define TASK_NEGATIVE_CAPTURE_BRAKE_ZONE_DECI_CM 16L
-#define TASK_NEGATIVE_CAPTURE_BRAKE_MAX_ZONE_DECI_CM 22L
-#define TASK_NEGATIVE_CAPTURE_BRAKE_ZONE_SPEED_DIVISOR 50L
-#define TASK_NEGATIVE_CAPTURE_SPEED_LIMIT_DECI_CM_S 30L
-#define TASK_NEGATIVE_CAPTURE_BRAKE_BASE_PULSES 12L
-#define TASK_NEGATIVE_CAPTURE_BRAKE_GAIN_NUMERATOR 1L
-#define TASK_NEGATIVE_CAPTURE_BRAKE_LIMIT_PULSES 50L
 #define TASK_MAX_DURATION_MS           5000U
 #define TASK_REVERSE_BOOST_MS            900U
 #define CALIBRATION_HOLD_MS            1000U
@@ -228,23 +209,6 @@ static const TaskControlParameters_t task_center_control_parameters =
   TASK_CENTER_CAPTURE_BRAKE_BASE_PULSES,
   TASK_CENTER_CAPTURE_BRAKE_GAIN_NUMERATOR,
   TASK_CENTER_CAPTURE_BRAKE_LIMIT_PULSES
-};
-
-static const TaskControlParameters_t task_negative_control_parameters =
-{
-  TASK_NEGATIVE_VREF_GAIN_NUMERATOR, TASK_NEGATIVE_VREF_GAIN_DIVISOR,
-  TASK_NEGATIVE_VREF_LIMIT_DECI_CM_S, TASK_NEGATIVE_TILT_GAIN_NUMERATOR,
-  TASK_NEGATIVE_TILT_GAIN_DIVISOR, TASK_NEGATIVE_MICRO_ADJUST_ZONE_DECI_CM,
-  TASK_NEGATIVE_ADAPTIVE_MOTION_DECI_CM_S,
-  TASK_NEGATIVE_ADAPTIVE_TILT_INITIAL_PULSES,
-  TASK_NEGATIVE_ADAPTIVE_TILT_STEP_PULSES,
-  TASK_NEGATIVE_ADAPTIVE_TILT_LIMIT_PULSES,
-  TASK_NEGATIVE_ADAPTIVE_TILT_PERIOD_MS,
-  TASK_NEGATIVE_CAPTURE_BRAKE_ZONE_DECI_CM,
-  TASK_NEGATIVE_CAPTURE_SPEED_LIMIT_DECI_CM_S,
-  TASK_NEGATIVE_CAPTURE_BRAKE_BASE_PULSES,
-  TASK_NEGATIVE_CAPTURE_BRAKE_GAIN_NUMERATOR,
-  TASK_NEGATIVE_CAPTURE_BRAKE_LIMIT_PULSES
 };
 
 /* +5cm keeps the previously validated values. */
@@ -318,13 +282,10 @@ static int32_t AbsInt32(int32_t value)
 static const TaskControlParameters_t *GetTaskControlParameters(
     int16_t target_x_deci_cm)
 {
-  if (target_x_deci_cm == TASK_CENTER_TARGET_DECI_CM)
+  if ((target_x_deci_cm == TASK_CENTER_TARGET_DECI_CM)
+      || (target_x_deci_cm == TASK_NEGATIVE_TARGET_DECI_CM))
   {
     return &task_center_control_parameters;
-  }
-  if (target_x_deci_cm == TASK_NEGATIVE_TARGET_DECI_CM)
-  {
-    return &task_negative_control_parameters;
   }
   return &task_positive_control_parameters;
 }
@@ -541,13 +502,6 @@ static int32_t ApplyTerminalCaptureBrake(int32_t desired_tilt_pulse,
   int32_t brake_tilt;
 
   speed = AbsInt32(velocity_deci_cm_per_s);
-  if (parameters == &task_negative_control_parameters)
-  {
-    brake_zone = ClampInt32(
-        brake_zone
-        + (speed / TASK_NEGATIVE_CAPTURE_BRAKE_ZONE_SPEED_DIVISOR),
-        brake_zone, TASK_NEGATIVE_CAPTURE_BRAKE_MAX_ZONE_DECI_CM);
-  }
   if ((AbsInt32(position_error_deci_cm) > brake_zone)
       || (speed <= parameters->capture_speed_limit_deci_cm_s)
       || (((position_error_deci_cm > 0) && (velocity_deci_cm_per_s <= 0))
@@ -1083,7 +1037,7 @@ int main(void)
           target_x_deci_cm = TASK_NEGATIVE_TARGET_DECI_CM;
           task_state = TASK_TO_NEGATIVE;
           adaptive_tilt_pulse =
-              task_negative_control_parameters.adaptive_tilt_initial_pulses;
+              task_center_control_parameters.adaptive_tilt_initial_pulses;
           last_adaptive_tilt_update_ms = now_ms;
           task_settled_start_ms = 0U;
           task_hold_last_measurement_counter = last_vision_measurement_counter;
@@ -1171,7 +1125,8 @@ int main(void)
           capture_braking_active = 0U;
           control_parameters = GetTaskControlParameters(target_x_deci_cm);
           use_center_fine_control =
-              ((task_state == TASK_TO_CENTER)
+              (((task_state == TASK_TO_CENTER)
+                || (task_state == TASK_TO_NEGATIVE))
                && (AbsInt32(position_error)
                    <= TASK_CENTER_FINE_ZONE_DECI_CM)) ? 1U : 0U;
           micro_adjust_active = ((AbsInt32(position_error)
@@ -1245,17 +1200,6 @@ int main(void)
             }
           }
           if (use_positive_adaptive != 0U)
-          {
-            desired_tilt_pulse = ApplyTerminalCaptureBrake(
-                desired_tilt_pulse, position_error,
-                ball_velocity_deci_cm_per_s, &capture_braking_active,
-                control_parameters);
-            if (capture_braking_active != 0U)
-            {
-              static_compensation_active = 0U;
-            }
-          }
-          else if (task_state == TASK_TO_NEGATIVE)
           {
             desired_tilt_pulse = ApplyTerminalCaptureBrake(
                 desired_tilt_pulse, position_error,
