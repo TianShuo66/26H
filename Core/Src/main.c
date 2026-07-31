@@ -167,7 +167,8 @@ typedef struct
 #define TASK_CENTER_TARGET_DECI_CM      0
 #define TASK_CENTER_FINE_ZONE_DECI_CM   15L
 #define TASK_CENTER_FINE_TILT_LIMIT_PULSES 18L
-#define TASK_CENTER_FINE_STATIC_PULSES  25L
+#define TASK_CENTER_LEFT_FINE_STATIC_PULSES 20L
+#define TASK_CENTER_RIGHT_FINE_STATIC_PULSES 25L
 #define TASK_CENTER_FINE_STATIC_SPEED_DECI_CM_S 20L
 #define TASK_CENTER_FINE_STATIC_TRIGGER_DECI_CM 7L
 // 中心点闭环参数
@@ -1147,6 +1148,7 @@ int main(void)
           int32_t adaptive_tilt_release_step_pulse;
           uint32_t adaptive_tilt_period_ms;
           int32_t adaptive_tilt_limit_pulse;
+          int32_t center_fine_static_pulse;
           int32_t step;
           int32_t step_limit;
           const TaskControlParameters_t *control_parameters;
@@ -1189,7 +1191,10 @@ int main(void)
           if (use_center_fine_control != 0U)
           {
             /* Keep the final approach smooth: no accumulating static tilt. */
-            adaptive_tilt_pulse = TASK_CENTER_FINE_STATIC_PULSES;
+            center_fine_static_pulse = (position_error > 0)
+                                      ? TASK_CENTER_LEFT_FINE_STATIC_PULSES
+                                      : TASK_CENTER_RIGHT_FINE_STATIC_PULSES;
+            adaptive_tilt_pulse = center_fine_static_pulse;
             desired_tilt_pulse = ClampInt32(desired_tilt_pulse,
                                    -TASK_CENTER_FINE_TILT_LIMIT_PULSES,
                                    TASK_CENTER_FINE_TILT_LIMIT_PULSES);
@@ -1200,7 +1205,7 @@ int main(void)
             {
               desired_tilt_pulse = ApplyAdaptiveTilt(
                   desired_tilt_pulse, position_error,
-                  TASK_CENTER_FINE_STATIC_PULSES,
+                  center_fine_static_pulse,
                   &static_compensation_active);
             }
           }
