@@ -76,6 +76,7 @@ typedef enum
 // 方向反转时的反制动速度与加减速参数
 #define MOTOR_REVERSE_BRAKE_SPEED_RPM 1800U
 #define MOTOR_REVERSE_BRAKE_ACCELERATION 200U
+#define MOTOR_REVERSE_BRAKE_MAX_STEP_PULSES 24
 // 软件行程限位脉冲
 #define MOTOR_SOFTWARE_LIMIT_PULSES   230
 // 倾斜目标脉冲上限
@@ -122,6 +123,7 @@ typedef enum
 #define TASK_SETTLED_VELOCITY_DECI_CM_S 5L
 #define TASK_SETTLED_HOLD_MS            120U
 #define TASK_MAX_DURATION_MS           5000U
+#define TASK_REVERSE_BOOST_MS            900U
 #define CALIBRATION_HOLD_MS            1000U
 #define CALIBRATION_MOVE_TIMEOUT_MS    1500U
 #define CALIBRATION_PULSE_TOLERANCE    2
@@ -349,6 +351,7 @@ int main(void)
   uint32_t last_static_bias_update = 0U;
   uint32_t task_start_ms = 0U;
   uint32_t task_settled_start_ms = 0U;
+  uint32_t task_reverse_boost_until_ms = 0U;
   uint32_t calibration_start_ms = 0U;
   uint32_t calibration_phase_start_ms = 0U;
   int32_t motor_position_counts = 0;
@@ -630,6 +633,7 @@ int main(void)
               task_state = TASK_TO_POSITIVE;
               task_start_ms = now_ms;
               task_settled_start_ms = 0U;
+              task_reverse_boost_until_ms = 0U;
               (void)Debug_PrintTaskEvent(TASK_EVENT_START, 0U);
             }
             else
@@ -761,6 +765,7 @@ int main(void)
           target_x_deci_cm = TASK_NEGATIVE_TARGET_DECI_CM;
           task_state = TASK_TO_NEGATIVE;
           task_settled_start_ms = 0U;
+          task_reverse_boost_until_ms = now_ms + TASK_REVERSE_BOOST_MS;
           (void)Debug_PrintTaskEvent(TASK_EVENT_REVERSE,
                                      now_ms - task_start_ms);
         }
@@ -815,8 +820,9 @@ int main(void)
           int32_t control_error = position_error;
           int32_t desired_tilt_pulse;
           int32_t step;
+          int32_t step_limit;
           uint8_t direction;
-          uint8_t reverse_braking;
+          uint8_t fast_braking;
 
           last_control_update = now_ms;
           predicted_stop_distance_deci_cm = 0;
@@ -890,9 +896,14 @@ int main(void)
                                              MOTOR_TILT_TARGET_LIMIT_PULSES);
           }
           motor_tilt_target_pulse = desired_tilt_pulse;
+          fast_braking = ((task_state == TASK_TO_NEGATIVE)
+                           && (now_ms < task_reverse_boost_until_ms))
+                            ? 1U : 0U;
+          step_limit = (fast_braking != 0U)
+                         ? MOTOR_REVERSE_BRAKE_MAX_STEP_PULSES
+                         : MOTOR_SHORT_STEP_MAX_PULSES;
           step = ClampInt32(desired_tilt_pulse - motor_pulse_est,
-                            -MOTOR_SHORT_STEP_MAX_PULSES,
-                            MOTOR_SHORT_STEP_MAX_PULSES);
+                            -step_limit, step_limit);
           if (step == 0)
           {
             previous_command_active = 0U;
@@ -900,15 +911,14 @@ int main(void)
           else
           {
             direction = (step > 0) ? 0U : 1U;
-            reverse_braking = 0U;
             if ((previous_command_active != 0U)
                 && (direction != previous_command_direction))
             {
               Emm_V5_Stop_Now(MOTOR_ADDRESS, false);
-              reverse_braking = 1U;
+              fast_braking = 1U;
             }
             if (SendShortRelativePulse(motor_pulse_est, step,
-                                       reverse_braking) == 0U)
+                                       fast_braking) == 0U)
             {
               StopAndDisableMotor(&motor_enabled);
               closed_loop_enabled = 0U;
