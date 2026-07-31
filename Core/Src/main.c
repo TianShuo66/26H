@@ -167,9 +167,8 @@ typedef struct
 #define TASK_CENTER_TARGET_DECI_CM      0
 #define TASK_CENTER_FINE_ZONE_DECI_CM   15L
 #define TASK_CENTER_FINE_TILT_LIMIT_PULSES 18L
-#define TASK_CENTER_LEFT_FINE_STATIC_PULSES 8L
-#define TASK_CENTER_RIGHT_FINE_STATIC_PULSES 15L
-#define TASK_CENTER_FINE_STATIC_SPEED_DECI_CM_S 20L
+#define TASK_CENTER_FINE_STATIC_PULSES  15L
+#define TASK_CENTER_FINE_STATIC_SPEED_DECI_CM_S 8L
 #define TASK_CENTER_FINE_STATIC_TRIGGER_DECI_CM 7L
 // 中心点闭环参数
 #define TASK_CENTER_VREF_GAIN_NUMERATOR 13L
@@ -195,16 +194,16 @@ typedef struct
 #define TASK_NEGATIVE_TILT_GAIN_NUMERATOR 45L
 #define TASK_NEGATIVE_TILT_GAIN_DIVISOR 100L
 #define TASK_NEGATIVE_MICRO_ADJUST_ZONE_DECI_CM 8L
-#define TASK_NEGATIVE_ADAPTIVE_MOTION_DECI_CM_S 30L
-#define TASK_NEGATIVE_ADAPTIVE_TILT_INITIAL_PULSES 35L
-#define TASK_NEGATIVE_ADAPTIVE_TILT_STEP_PULSES 10L
-#define TASK_NEGATIVE_ADAPTIVE_TILT_LIMIT_PULSES 100L
-#define TASK_NEGATIVE_ADAPTIVE_TILT_PERIOD_MS 80U
-#define TASK_NEGATIVE_CAPTURE_BRAKE_ZONE_DECI_CM 10L
+#define TASK_NEGATIVE_ADAPTIVE_MOTION_DECI_CM_S 15L
+#define TASK_NEGATIVE_ADAPTIVE_TILT_INITIAL_PULSES 15L
+#define TASK_NEGATIVE_ADAPTIVE_TILT_STEP_PULSES 5L
+#define TASK_NEGATIVE_ADAPTIVE_TILT_LIMIT_PULSES 150L
+#define TASK_NEGATIVE_ADAPTIVE_TILT_PERIOD_MS 250U
+#define TASK_NEGATIVE_CAPTURE_BRAKE_ZONE_DECI_CM 20L
 #define TASK_NEGATIVE_CAPTURE_SPEED_LIMIT_DECI_CM_S 15L
-#define TASK_NEGATIVE_CAPTURE_BRAKE_BASE_PULSES 20L
-#define TASK_NEGATIVE_CAPTURE_BRAKE_GAIN_NUMERATOR 1L
-#define TASK_NEGATIVE_CAPTURE_BRAKE_LIMIT_PULSES 45L
+#define TASK_NEGATIVE_CAPTURE_BRAKE_BASE_PULSES 35L
+#define TASK_NEGATIVE_CAPTURE_BRAKE_GAIN_NUMERATOR 2L
+#define TASK_NEGATIVE_CAPTURE_BRAKE_LIMIT_PULSES 70L
 #define TASK_MAX_DURATION_MS           5000U
 #define TASK_REVERSE_BOOST_MS            900U
 #define CALIBRATION_HOLD_MS            1000U
@@ -1148,7 +1147,6 @@ int main(void)
           int32_t adaptive_tilt_release_step_pulse;
           uint32_t adaptive_tilt_period_ms;
           int32_t adaptive_tilt_limit_pulse;
-          int32_t center_fine_static_pulse;
           int32_t step;
           int32_t step_limit;
           const TaskControlParameters_t *control_parameters;
@@ -1191,10 +1189,7 @@ int main(void)
           if (use_center_fine_control != 0U)
           {
             /* Keep the final approach smooth: no accumulating static tilt. */
-            center_fine_static_pulse = (position_error > 0)
-                                      ? TASK_CENTER_LEFT_FINE_STATIC_PULSES
-                                      : TASK_CENTER_RIGHT_FINE_STATIC_PULSES;
-            adaptive_tilt_pulse = center_fine_static_pulse;
+            adaptive_tilt_pulse = TASK_CENTER_FINE_STATIC_PULSES;
             desired_tilt_pulse = ClampInt32(desired_tilt_pulse,
                                    -TASK_CENTER_FINE_TILT_LIMIT_PULSES,
                                    TASK_CENTER_FINE_TILT_LIMIT_PULSES);
@@ -1205,7 +1200,7 @@ int main(void)
             {
               desired_tilt_pulse = ApplyAdaptiveTilt(
                   desired_tilt_pulse, position_error,
-                  center_fine_static_pulse,
+                  TASK_CENTER_FINE_STATIC_PULSES,
                   &static_compensation_active);
             }
           }
