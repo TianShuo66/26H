@@ -108,6 +108,8 @@ typedef enum
 #define BALL_POSITION_GAIN_NUMERATOR  100L
 // 速度环增益分子
 #define BALL_VELOCITY_GAIN_NUMERATOR  45L
+// 朝 +5cm 端点靠近时的速度反馈较弱，避免该方向过早制动
+#define BALL_POSITIVE_APPROACH_VELOCITY_GAIN_NUMERATOR 30L
 // 倾斜控制增益分母
 #define BALL_TILT_GAIN_DIVISOR        100L
 // 钢球速度超过该值视为运动状态，单位：0.1cm/s
@@ -814,6 +816,7 @@ int main(void)
           int32_t desired_tilt_pulse;
           int32_t step;
           int32_t step_limit;
+          int32_t velocity_gain_numerator;
           uint8_t direction;
           uint8_t fast_braking;
           uint8_t static_ready;
@@ -837,6 +840,14 @@ int main(void)
           static_compensation_active = 0U;
           micro_adjust_active = (AbsInt32(position_error)
                                  <= BALL_MICRO_ADJUST_ZONE_DECI_CM) ? 1U : 0U;
+          velocity_gain_numerator = BALL_VELOCITY_GAIN_NUMERATOR;
+          if ((target_x_deci_cm == TASK_POSITIVE_TARGET_DECI_CM)
+              && (position_error > 0)
+              && (ball_velocity_deci_cm_per_s > 0))
+          {
+            velocity_gain_numerator =
+                BALL_POSITIVE_APPROACH_VELOCITY_GAIN_NUMERATOR;
+          }
 
           if ((AbsInt32(position_error) <= BALL_POSITION_DEADBAND_DECI_CM)
               && (AbsInt32(ball_velocity_deci_cm_per_s)
@@ -849,7 +860,7 @@ int main(void)
           {
             /* The rod target is bounded; short pulses only chase this target. */
             desired_tilt_pulse = -((BALL_POSITION_GAIN_NUMERATOR * control_error
-                                    - BALL_VELOCITY_GAIN_NUMERATOR
+                                    - velocity_gain_numerator
                                       * ball_velocity_deci_cm_per_s)
                                    / BALL_TILT_GAIN_DIVISOR);
             desired_tilt_pulse = ClampInt32(desired_tilt_pulse,
