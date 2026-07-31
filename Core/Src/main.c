@@ -163,9 +163,9 @@ typedef struct
 // -5cm 连续 800ms 位于目标误差内即可进入保持。
 #define TASK_NEGATIVE_HOLD_POSITION_TOLERANCE_DECI_CM 7
 #define TASK_NEGATIVE_HOLD_VERIFICATION_MS     800U
-// 回中心最后 1.5cm 使用小倾角微调，避免通用起步补偿来回累积。
+// 回中心最后 0.7cm 使用小倾角微调；其余距离保留自适应倾角以克服静摩擦。
 #define TASK_CENTER_TARGET_DECI_CM      0
-#define TASK_CENTER_FINE_ZONE_DECI_CM   15L
+#define TASK_CENTER_FINE_ZONE_DECI_CM   7L
 #define TASK_CENTER_FINE_TILT_LIMIT_PULSES 18L
 #define TASK_CENTER_FINE_STATIC_PULSES  15L
 #define TASK_CENTER_FINE_STATIC_SPEED_DECI_CM_S 8L
