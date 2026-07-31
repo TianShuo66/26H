@@ -689,6 +689,7 @@ HAL_StatusTypeDef Debug_PrintControlState(int16_t ball_x_deci_cm,
                                            int32_t ball_velocity_deci_cm_per_s,
                                            uint8_t fast_tilt_tracking,
                                            uint8_t static_compensation_active,
+                                           uint8_t micro_adjust_active,
                                            int32_t position_counts,
                                            int32_t position_centi_degrees,
                                            uint32_t task_elapsed_ms)
@@ -751,6 +752,14 @@ HAL_StatusTypeDef Debug_PrintControlState(int16_t ball_x_deci_cm,
   buffer[length++] = 'C';
   buffer[length++] = ',';
   Debug_AppendUnsignedInt32(buffer, &length, static_compensation_active);
+  buffer[length++] = ',';
+  buffer[length++] = 'M';
+  buffer[length++] = 'I';
+  buffer[length++] = 'C';
+  buffer[length++] = 'R';
+  buffer[length++] = 'O';
+  buffer[length++] = ',';
+  Debug_AppendUnsignedInt32(buffer, &length, micro_adjust_active);
   buffer[length++] = ',';
   buffer[length++] = 'P';
   buffer[length++] = 'U';
