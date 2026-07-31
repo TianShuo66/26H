@@ -954,10 +954,9 @@ int main(void)
           (void)Debug_PrintTaskEvent(TASK_EVENT_REVERSE,
                                      now_ms - task_start_ms);
         }
-        else if ((task_state == TASK_TO_CENTER)
-                 || (task_state == TASK_TO_NEGATIVE))
+        else if (task_state == TASK_TO_NEGATIVE)
         {
-          /* Only fresh, accepted camera samples may advance balance hold. */
+          /* Only fresh, accepted camera samples may advance -5cm hold. */
           if ((ball_estimate_updated != 0U)
               && (last_vision_measurement_counter
                   != task_hold_last_measurement_counter))
