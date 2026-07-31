@@ -150,14 +150,6 @@ typedef enum
 #define TASK_CENTER_FINE_TILT_LIMIT_PULSES 18L
 #define TASK_CENTER_FINE_STATIC_PULSES  15L
 #define TASK_CENTER_FINE_STATIC_SPEED_DECI_CM_S 8L
-#define TASK_CENTER_FINE_ENTRY_SPEED_DECI_CM_S 30L
-#define TASK_CENTER_TILT_LIMIT_PULSES 45L
-// 终端卡滞时以真实视觉位置进展而非估计速度决定是否加大倾角。
-#define TASK_TERMINAL_PROGRESS_DECI_CM  1L
-#define TASK_TERMINAL_STALL_PERIOD_MS   320U
-#define TASK_TERMINAL_STALL_INITIAL_PULSES 25L
-#define TASK_TERMINAL_STALL_STEP_PULSES 10L
-#define TASK_TERMINAL_STALL_LIMIT_PULSES 80L
 #define TASK_MAX_DURATION_MS           5000U
 #define TASK_REVERSE_BOOST_MS            900U
 #define CALIBRATION_HOLD_MS            1000U
@@ -482,7 +474,6 @@ int main(void)
   uint32_t task_start_ms = 0U;
   uint32_t task_settled_start_ms = 0U;
   uint32_t task_hold_last_measurement_counter = 0U;
-  uint32_t task_terminal_progress_ms = 0U;
   uint32_t task_reverse_boost_until_ms = 0U;
   uint32_t calibration_start_ms = 0U;
   uint32_t calibration_phase_start_ms = 0U;
@@ -494,9 +485,6 @@ int main(void)
   int32_t ball_velocity_deci_cm_per_s = 0;
   int16_t ball_x_est_deci_cm = 0;
   int16_t target_x_deci_cm = 0;
-  int32_t task_terminal_best_error_deci_cm = 0L;
-  int32_t task_terminal_stall_tilt_pulse =
-      TASK_TERMINAL_STALL_INITIAL_PULSES;
   int32_t calibration_target_pulse = 0;
   uint8_t previous_keys;
   uint8_t motor_enabled = 0U;
@@ -507,7 +495,6 @@ int main(void)
   uint8_t motor_position_request_pending = 0U;
   uint8_t ball_estimate_updated = 0U;
   uint8_t task_hold_valid_sample_count = 0U;
-  uint8_t task_terminal_stall_active = 0U;
   uint8_t previous_command_direction = 0U;
   uint8_t previous_command_active = 0U;
   uint8_t fast_tilt_tracking = 0U;
@@ -698,7 +685,6 @@ int main(void)
         uint8_t start_requested = 0U;
         uint8_t task_start_requested = 0U;
         uint8_t center_start_requested = 0U;
-        uint8_t negative_start_requested = 0U;
 
         last_key_action = HAL_GetTick();
         if (calibration_state != CALIBRATION_IDLE)
@@ -751,12 +737,6 @@ int main(void)
             task_settled_start_ms = 0U;
             task_hold_valid_sample_count = 0U;
             task_hold_last_measurement_counter = last_vision_measurement_counter;
-            task_terminal_best_error_deci_cm = AbsInt32(
-                (int32_t)target_x_deci_cm - ball_x_est_deci_cm);
-            task_terminal_progress_ms = last_ball_sample_ms;
-            task_terminal_stall_tilt_pulse =
-                TASK_TERMINAL_STALL_INITIAL_PULSES;
-            task_terminal_stall_active = 0U;
             previous_command_active = 0U;
             (void)Debug_PrintTaskEvent(TASK_EVENT_START, 0U);
           }
@@ -775,29 +755,7 @@ int main(void)
         else if ((pressed_keys & 0x08U) != 0U)
         {
           target_x_deci_cm = TASK_NEGATIVE_TARGET_DECI_CM;
-          if (closed_loop_enabled != 0U)
-          {
-            task_state = TASK_TO_NEGATIVE;
-            adaptive_tilt_pulse = BALL_ADAPTIVE_TILT_INITIAL_PULSES;
-            last_adaptive_tilt_update_ms = now_ms;
-            task_start_ms = now_ms;
-            task_settled_start_ms = 0U;
-            task_hold_valid_sample_count = 0U;
-            task_hold_last_measurement_counter = last_vision_measurement_counter;
-            task_terminal_best_error_deci_cm = AbsInt32(
-                (int32_t)target_x_deci_cm - ball_x_est_deci_cm);
-            task_terminal_progress_ms = last_ball_sample_ms;
-            task_terminal_stall_tilt_pulse =
-                TASK_TERMINAL_STALL_INITIAL_PULSES;
-            task_terminal_stall_active = 0U;
-            previous_command_active = 0U;
-            (void)Debug_PrintTaskEvent(TASK_EVENT_START, 0U);
-          }
-          else
-          {
-            start_requested = 1U;
-            negative_start_requested = 1U;
-          }
+          start_requested = (closed_loop_enabled == 0U) ? 1U : 0U;
         }
 
         if (start_requested != 0U)
@@ -865,27 +823,6 @@ int main(void)
               task_settled_start_ms = 0U;
               task_hold_valid_sample_count = 0U;
               task_hold_last_measurement_counter = last_vision_measurement_counter;
-              task_terminal_best_error_deci_cm = AbsInt32(
-                  (int32_t)target_x_deci_cm - ball_x_est_deci_cm);
-              task_terminal_progress_ms = last_ball_sample_ms;
-              task_terminal_stall_tilt_pulse =
-                  TASK_TERMINAL_STALL_INITIAL_PULSES;
-              task_terminal_stall_active = 0U;
-              (void)Debug_PrintTaskEvent(TASK_EVENT_START, 0U);
-            }
-            else if (negative_start_requested != 0U)
-            {
-              task_state = TASK_TO_NEGATIVE;
-              task_start_ms = now_ms;
-              task_settled_start_ms = 0U;
-              task_hold_valid_sample_count = 0U;
-              task_hold_last_measurement_counter = last_vision_measurement_counter;
-              task_terminal_best_error_deci_cm = AbsInt32(
-                  (int32_t)target_x_deci_cm - ball_x_est_deci_cm);
-              task_terminal_progress_ms = last_ball_sample_ms;
-              task_terminal_stall_tilt_pulse =
-                  TASK_TERMINAL_STALL_INITIAL_PULSES;
-              task_terminal_stall_active = 0U;
               (void)Debug_PrintTaskEvent(TASK_EVENT_START, 0U);
             }
             else
@@ -1000,51 +937,6 @@ int main(void)
       }
       else
       {
-        if ((ball_estimate_updated != 0U)
-            && ((task_state == TASK_TO_CENTER)
-                || (task_state == TASK_TO_NEGATIVE)))
-        {
-          int32_t current_error_deci_cm = AbsInt32(
-              (int32_t)target_x_deci_cm - ball_x_est_deci_cm);
-
-          if (current_error_deci_cm
-              <= TASK_HOLD_POSITION_TOLERANCE_DECI_CM)
-          {
-            task_terminal_best_error_deci_cm = current_error_deci_cm;
-            task_terminal_progress_ms = last_ball_sample_ms;
-            task_terminal_stall_tilt_pulse =
-                TASK_TERMINAL_STALL_INITIAL_PULSES;
-            task_terminal_stall_active = 0U;
-          }
-          else if ((current_error_deci_cm + TASK_TERMINAL_PROGRESS_DECI_CM)
-                   <= task_terminal_best_error_deci_cm)
-          {
-            task_terminal_best_error_deci_cm = current_error_deci_cm;
-            task_terminal_progress_ms = last_ball_sample_ms;
-            task_terminal_stall_tilt_pulse =
-                TASK_TERMINAL_STALL_INITIAL_PULSES;
-            task_terminal_stall_active = 0U;
-          }
-          else if ((last_ball_sample_ms - task_terminal_progress_ms)
-                   >= TASK_TERMINAL_STALL_PERIOD_MS)
-          {
-            if (task_terminal_stall_active == 0U)
-            {
-              task_terminal_stall_tilt_pulse =
-                  TASK_TERMINAL_STALL_INITIAL_PULSES;
-              task_terminal_stall_active = 1U;
-            }
-            else
-            {
-              task_terminal_stall_tilt_pulse = ClampInt32(
-                  task_terminal_stall_tilt_pulse
-                  + TASK_TERMINAL_STALL_STEP_PULSES,
-                  TASK_TERMINAL_STALL_INITIAL_PULSES,
-                  TASK_TERMINAL_STALL_LIMIT_PULSES);
-            }
-            task_terminal_progress_ms = last_ball_sample_ms;
-          }
-        }
         if (((task_state == TASK_TO_POSITIVE)
              || (task_state == TASK_TO_NEGATIVE))
             && ((now_ms - task_start_ms) > TASK_MAX_DURATION_MS))
@@ -1066,12 +958,6 @@ int main(void)
           task_settled_start_ms = 0U;
           task_hold_valid_sample_count = 0U;
           task_hold_last_measurement_counter = last_vision_measurement_counter;
-          task_terminal_best_error_deci_cm = AbsInt32(
-              (int32_t)target_x_deci_cm - ball_x_est_deci_cm);
-          task_terminal_progress_ms = last_ball_sample_ms;
-          task_terminal_stall_tilt_pulse =
-              TASK_TERMINAL_STALL_INITIAL_PULSES;
-          task_terminal_stall_active = 0U;
           task_reverse_boost_until_ms = now_ms + TASK_REVERSE_BOOST_MS;
           (void)Debug_PrintTaskEvent(TASK_EVENT_REVERSE,
                                      now_ms - task_start_ms);
@@ -1166,9 +1052,7 @@ int main(void)
           use_center_fine_control =
               ((task_state == TASK_TO_CENTER)
                && (AbsInt32(position_error)
-                   <= TASK_CENTER_FINE_ZONE_DECI_CM)
-               && (AbsInt32(ball_velocity_deci_cm_per_s)
-                   <= TASK_CENTER_FINE_ENTRY_SPEED_DECI_CM_S)) ? 1U : 0U;
+                   <= TASK_CENTER_FINE_ZONE_DECI_CM)) ? 1U : 0U;
           micro_adjust_active = ((AbsInt32(position_error)
                                   <= BALL_MICRO_ADJUST_ZONE_DECI_CM)
                                  || (use_center_fine_control != 0U)) ? 1U : 0U;
@@ -1255,23 +1139,6 @@ int main(void)
             {
               static_compensation_active = 0U;
             }
-          }
-          if ((task_terminal_stall_active != 0U)
-              && ((task_state == TASK_TO_CENTER)
-                  || (task_state == TASK_TO_NEGATIVE)))
-          {
-            capture_braking_active = 0U;
-            adaptive_tilt_pulse = task_terminal_stall_tilt_pulse;
-            desired_tilt_pulse = ApplyAdaptiveTilt(
-                desired_tilt_pulse, position_error,
-                task_terminal_stall_tilt_pulse,
-                &static_compensation_active);
-          }
-          else if (task_state == TASK_TO_CENTER)
-          {
-            desired_tilt_pulse = ClampInt32(desired_tilt_pulse,
-                                   -TASK_CENTER_TILT_LIMIT_PULSES,
-                                   TASK_CENTER_TILT_LIMIT_PULSES);
           }
           motor_tilt_target_pulse = desired_tilt_pulse;
           step = desired_tilt_pulse - motor_pulse_est;
