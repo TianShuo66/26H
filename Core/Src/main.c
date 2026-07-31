@@ -115,6 +115,10 @@ typedef enum
 #define MODEL_BRAKE_DECEL_FOR_NEGATIVE_VELOCITY 18L
 // 预测停车距离上限，避免异常视觉速度造成过大的反向指令，单位：0.1cm
 #define MODEL_MAX_STOP_DISTANCE_DECI_CM 240L
+// 距离目标进入该范围后，启用停车距离预测，单位：0.1cm
+#define MODEL_TERMINAL_ZONE_DECI_CM    20
+// 终端区摆杆目标限制，避免在目的地附近使用大倾角反复拉动钢球
+#define MOTOR_TERMINAL_TILT_LIMIT_PULSES 80
 #define TASK_POSITIVE_TARGET_DECI_CM    50
 #define TASK_NEGATIVE_TARGET_DECI_CM   (-50)
 #define TASK_POSITIVE_REVERSE_DECI_CM   45
@@ -823,11 +827,16 @@ int main(void)
           int32_t step_limit;
           uint8_t direction;
           uint8_t fast_braking;
+          uint8_t terminal_zone;
 
           last_control_update = now_ms;
+          terminal_zone = (AbsInt32(position_error)
+                           <= MODEL_TERMINAL_ZONE_DECI_CM) ? 1U : 0U;
           predicted_stop_distance_deci_cm = 0;
-          if (AbsInt32(ball_velocity_deci_cm_per_s)
+          if ((terminal_zone != 0U)
+              && (AbsInt32(ball_velocity_deci_cm_per_s)
               >= MODEL_PREDICT_MIN_VELOCITY_DECI_CM_S)
+             )
           {
             predicted_stop_distance_deci_cm = CalculatePredictedStopDistance(
                 ball_velocity_deci_cm_per_s);
@@ -894,6 +903,12 @@ int main(void)
             desired_tilt_pulse = ClampInt32(desired_tilt_pulse,
                                              -MOTOR_TILT_TARGET_LIMIT_PULSES,
                                              MOTOR_TILT_TARGET_LIMIT_PULSES);
+            if (terminal_zone != 0U)
+            {
+              desired_tilt_pulse = ClampInt32(
+                  desired_tilt_pulse, -MOTOR_TERMINAL_TILT_LIMIT_PULSES,
+                  MOTOR_TERMINAL_TILT_LIMIT_PULSES);
+            }
           }
           motor_tilt_target_pulse = desired_tilt_pulse;
           fast_braking = ((task_state == TASK_TO_NEGATIVE)
