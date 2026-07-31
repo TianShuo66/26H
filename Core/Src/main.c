@@ -73,6 +73,9 @@ typedef enum
 #define MOTOR_SHORT_STEP_SPEED_RPM    1000U
 // 短步加减速参数
 #define MOTOR_SHORT_STEP_ACCELERATION 100U
+// 方向反转时的反制动速度与加减速参数
+#define MOTOR_REVERSE_BRAKE_SPEED_RPM 1800U
+#define MOTOR_REVERSE_BRAKE_ACCELERATION 200U
 // 软件行程限位脉冲
 #define MOTOR_SOFTWARE_LIMIT_PULSES   230
 // 倾斜目标脉冲上限
@@ -107,8 +110,8 @@ typedef enum
 // 速度超过该值时，使用预测停车点而非当前位置控制，单位：0.1cm/s
 #define MODEL_PREDICT_MIN_VELOCITY_DECI_CM_S 10L
 // 由实测 +40 / -40 脉冲得到的反向制动加速度，单位：0.1cm/s^2
-#define MODEL_BRAKE_DECEL_FOR_POSITIVE_VELOCITY 24L
-#define MODEL_BRAKE_DECEL_FOR_NEGATIVE_VELOCITY 12L
+#define MODEL_BRAKE_DECEL_FOR_POSITIVE_VELOCITY 36L
+#define MODEL_BRAKE_DECEL_FOR_NEGATIVE_VELOCITY 18L
 // 预测停车距离上限，避免异常视觉速度造成过大的反向指令，单位：0.1cm
 #define MODEL_MAX_STOP_DISTANCE_DECI_CM 240L
 #define TASK_POSITIVE_TARGET_DECI_CM    50
@@ -224,7 +227,8 @@ static int32_t MotorPositionToPulse(int32_t position_counts,
          / MOTOR_POSITION_COUNTS_PER_REVOLUTION;
 }
 
-static uint8_t SendShortRelativePulse(int32_t current_pulse, int32_t step)
+static uint8_t SendShortRelativePulse(int32_t current_pulse, int32_t step,
+                                      uint8_t reverse_braking)
 {
   uint32_t pulses;
   uint8_t direction;
@@ -237,8 +241,13 @@ static uint8_t SendShortRelativePulse(int32_t current_pulse, int32_t step)
 
   direction = (step > 0) ? 0U : 1U;
   pulses = (uint32_t)AbsInt32(step);
-  Emm_V5_Pos_Control(MOTOR_ADDRESS, direction, MOTOR_SHORT_STEP_SPEED_RPM,
-                      MOTOR_SHORT_STEP_ACCELERATION, pulses, false, false);
+  Emm_V5_Pos_Control(MOTOR_ADDRESS, direction,
+                      (reverse_braking != 0U) ? MOTOR_REVERSE_BRAKE_SPEED_RPM
+                                               : MOTOR_SHORT_STEP_SPEED_RPM,
+                      (reverse_braking != 0U)
+                        ? MOTOR_REVERSE_BRAKE_ACCELERATION
+                        : MOTOR_SHORT_STEP_ACCELERATION,
+                      pulses, false, false);
   return 1U;
 }
 
@@ -700,7 +709,7 @@ int main(void)
                             -MOTOR_SHORT_STEP_MAX_PULSES,
                             MOTOR_SHORT_STEP_MAX_PULSES);
           if ((step != 0)
-              && (SendShortRelativePulse(motor_pulse_est, step) == 0U))
+              && (SendShortRelativePulse(motor_pulse_est, step, 0U) == 0U))
           {
             StopAndDisableMotor(&motor_enabled);
             calibration_state = CALIBRATION_IDLE;
@@ -807,6 +816,7 @@ int main(void)
           int32_t desired_tilt_pulse;
           int32_t step;
           uint8_t direction;
+          uint8_t reverse_braking;
 
           last_control_update = now_ms;
           predicted_stop_distance_deci_cm = 0;
@@ -890,12 +900,15 @@ int main(void)
           else
           {
             direction = (step > 0) ? 0U : 1U;
+            reverse_braking = 0U;
             if ((previous_command_active != 0U)
                 && (direction != previous_command_direction))
             {
               Emm_V5_Stop_Now(MOTOR_ADDRESS, false);
+              reverse_braking = 1U;
             }
-            if (SendShortRelativePulse(motor_pulse_est, step) == 0U)
+            if (SendShortRelativePulse(motor_pulse_est, step,
+                                       reverse_braking) == 0U)
             {
               StopAndDisableMotor(&motor_enabled);
               closed_loop_enabled = 0U;
