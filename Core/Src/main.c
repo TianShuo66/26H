@@ -96,6 +96,13 @@ typedef enum
 #define BALL_VELOCITY_GAIN_NUMERATOR  20L
 // 倾斜控制增益分母
 #define BALL_TILT_GAIN_DIVISOR        100L
+// 速度超过该值时，使用预测停车点而非当前位置控制，单位：0.1cm/s
+#define MODEL_PREDICT_MIN_VELOCITY_DECI_CM_S 10L
+// 由实测 +40 / -40 脉冲得到的反向制动加速度，单位：0.1cm/s^2
+#define MODEL_BRAKE_DECEL_FOR_POSITIVE_VELOCITY 48L
+#define MODEL_BRAKE_DECEL_FOR_NEGATIVE_VELOCITY 22L
+// 预测停车距离上限，避免异常视觉速度造成过大的反向指令，单位：0.1cm
+#define MODEL_MAX_STOP_DISTANCE_DECI_CM 100L
 #define CALIBRATION_HOLD_MS            1000U
 #define CALIBRATION_MOVE_TIMEOUT_MS    1500U
 #define CALIBRATION_PULSE_TOLERANCE    2
@@ -153,6 +160,25 @@ static int32_t AbsInt32(int32_t value)
     return -value;
   }
   return value;
+}
+
+static int32_t CalculatePredictedStopDistance(int32_t velocity_deci_cm_per_s)
+{
+  int32_t brake_decel;
+  int32_t distance;
+
+  if (velocity_deci_cm_per_s == 0)
+  {
+    return 0;
+  }
+
+  /* Positive motor pulses brake positive ball velocity; the two sides differ. */
+  brake_decel = (velocity_deci_cm_per_s > 0)
+                  ? MODEL_BRAKE_DECEL_FOR_POSITIVE_VELOCITY
+                  : MODEL_BRAKE_DECEL_FOR_NEGATIVE_VELOCITY;
+  distance = (velocity_deci_cm_per_s * velocity_deci_cm_per_s)
+             / (2L * brake_decel);
+  return ClampInt32(distance, 0, MODEL_MAX_STOP_DISTANCE_DECI_CM);
 }
 
 static void EnableMotor(uint8_t *motor_enabled)
@@ -304,6 +330,8 @@ int main(void)
   int32_t motor_tilt_target_pulse = 0;
   int32_t motor_static_bias_pulse = 0;
   int32_t ball_velocity_deci_cm_per_s = 0;
+  int32_t predicted_stop_distance_deci_cm = 0;
+  int32_t predicted_error_deci_cm = 0;
   int16_t ball_x_est_deci_cm = 0;
   int16_t target_x_deci_cm = 0;
   int32_t calibration_target_pulse = 0;
@@ -417,6 +445,8 @@ int main(void)
         (void)Debug_PrintControlState(vision_x_deci_cm, vision_y_deci_cm,
                                       target_x_deci_cm, motor_pulse_est,
                                       motor_tilt_target_pulse,
+                                      predicted_stop_distance_deci_cm,
+                                      predicted_error_deci_cm,
                                       motor_position_counts,
                                       position_centi_degrees,
                                       now_ms - closed_loop_start_ms);
@@ -543,6 +573,8 @@ int main(void)
             motor_pulse_est = 0;
             motor_tilt_target_pulse = 0;
             motor_static_bias_pulse = 0;
+            predicted_stop_distance_deci_cm = 0;
+            predicted_error_deci_cm = 0;
             last_static_bias_update = now_ms;
             motor_position_valid = 1U;
             last_motor_position_ms = now_ms;
@@ -680,13 +712,28 @@ int main(void)
         else if (((now_ms - last_control_update) >= MOTOR_CONTROL_PERIOD_MS)
                  && (motor_position_request_pending == 0U))
         {
-          int32_t error = (int32_t)target_x_deci_cm - ball_x_est_deci_cm;
+          int32_t position_error = (int32_t)target_x_deci_cm
+                                   - ball_x_est_deci_cm;
+          int32_t control_error = position_error;
           int32_t desired_tilt_pulse;
           int32_t step;
           uint8_t direction;
 
           last_control_update = now_ms;
-          if ((AbsInt32(error) <= BALL_POSITION_DEADBAND_DECI_CM)
+          predicted_stop_distance_deci_cm = 0;
+          if (AbsInt32(ball_velocity_deci_cm_per_s)
+              >= MODEL_PREDICT_MIN_VELOCITY_DECI_CM_S)
+          {
+            predicted_stop_distance_deci_cm = CalculatePredictedStopDistance(
+                ball_velocity_deci_cm_per_s);
+            control_error = position_error
+                          - ((ball_velocity_deci_cm_per_s > 0)
+                               ? predicted_stop_distance_deci_cm
+                               : -predicted_stop_distance_deci_cm);
+          }
+          predicted_error_deci_cm = control_error;
+
+          if ((AbsInt32(position_error) <= BALL_POSITION_DEADBAND_DECI_CM)
               && (AbsInt32(ball_velocity_deci_cm_per_s)
                   <= BALL_SETTLED_VELOCITY_DECI_CM_S))
           {
@@ -696,7 +743,7 @@ int main(void)
           else
           {
             /* The rod target is bounded; short pulses only chase this target. */
-            desired_tilt_pulse = -((BALL_POSITION_GAIN_NUMERATOR * error
+            desired_tilt_pulse = -((BALL_POSITION_GAIN_NUMERATOR * control_error
                                     - BALL_VELOCITY_GAIN_NUMERATOR
                                       * ball_velocity_deci_cm_per_s)
                                    / BALL_TILT_GAIN_DIVISOR);
@@ -704,23 +751,23 @@ int main(void)
                                              -MOTOR_TILT_TARGET_LIMIT_PULSES,
                                              MOTOR_TILT_TARGET_LIMIT_PULSES);
             /* Overcome static friction only while the ball is effectively still. */
-            if ((AbsInt32(error) >= BALL_STATIC_TRIGGER_DECI_CM)
+            if ((AbsInt32(position_error) >= BALL_STATIC_TRIGGER_DECI_CM)
                 && (AbsInt32(ball_velocity_deci_cm_per_s)
-                 <= BALL_VELOCITY_DEADBAND_DECI_CM_S)
+                 < MODEL_PREDICT_MIN_VELOCITY_DECI_CM_S)
                 && (AbsInt32(desired_tilt_pulse) < MOTOR_STATIC_TILT_PULSES))
             {
-              desired_tilt_pulse = (error < 0)
+              desired_tilt_pulse = (position_error < 0)
                                  ? MOTOR_STATIC_TILT_PULSES
                                  : -MOTOR_STATIC_TILT_PULSES;
             }
-            if ((AbsInt32(error) < BALL_STATIC_TRIGGER_DECI_CM)
+            if ((AbsInt32(position_error) < BALL_STATIC_TRIGGER_DECI_CM)
                 || (AbsInt32(ball_velocity_deci_cm_per_s)
-                    > BALL_VELOCITY_DEADBAND_DECI_CM_S))
+                    >= MODEL_PREDICT_MIN_VELOCITY_DECI_CM_S))
             {
               motor_static_bias_pulse = 0;
             }
-            else if (((error < 0) && (motor_static_bias_pulse < 0))
-                     || ((error > 0) && (motor_static_bias_pulse > 0)))
+            else if (((position_error < 0) && (motor_static_bias_pulse < 0))
+                     || ((position_error > 0) && (motor_static_bias_pulse > 0)))
             {
               motor_static_bias_pulse = 0;
             }
@@ -731,7 +778,7 @@ int main(void)
                          <= MOTOR_SHORT_STEP_MAX_PULSES))
             {
               last_static_bias_update = now_ms;
-              motor_static_bias_pulse += (error < 0)
+              motor_static_bias_pulse += (position_error < 0)
                                        ? MOTOR_STATIC_BIAS_STEP_PULSES
                                        : -MOTOR_STATIC_BIAS_STEP_PULSES;
               motor_static_bias_pulse = ClampInt32(

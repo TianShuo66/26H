@@ -620,6 +620,8 @@ HAL_StatusTypeDef Debug_PrintControlState(int16_t ball_x_deci_cm,
                                            int16_t target_x_deci_cm,
                                            int32_t motor_pulse,
                                            int32_t motor_tilt_target_pulse,
+                                           int32_t predicted_stop_distance_deci_cm,
+                                           int32_t predicted_error_deci_cm,
                                            int32_t position_counts,
                                            int32_t position_centi_degrees,
                                            uint32_t task_elapsed_ms)
@@ -654,6 +656,29 @@ HAL_StatusTypeDef Debug_PrintControlState(int16_t ball_x_deci_cm,
   buffer[length++] = 'F';
   buffer[length++] = ',';
   Debug_AppendDeciCm(buffer, &length, target_x_deci_cm);
+  buffer[length++] = ',';
+  buffer[length++] = 'S';
+  buffer[length++] = 'T';
+  buffer[length++] = 'O';
+  buffer[length++] = 'P';
+  buffer[length++] = '_';
+  buffer[length++] = 'D';
+  buffer[length++] = 'I';
+  buffer[length++] = 'S';
+  buffer[length++] = 'T';
+  buffer[length++] = ',';
+  Debug_AppendDeciCm(buffer, &length, predicted_stop_distance_deci_cm);
+  buffer[length++] = ',';
+  buffer[length++] = 'P';
+  buffer[length++] = 'R';
+  buffer[length++] = 'E';
+  buffer[length++] = 'D';
+  buffer[length++] = '_';
+  buffer[length++] = 'E';
+  buffer[length++] = 'R';
+  buffer[length++] = 'R';
+  buffer[length++] = ',';
+  Debug_AppendDeciCm(buffer, &length, predicted_error_deci_cm);
   buffer[length++] = ',';
   buffer[length++] = 'P';
   buffer[length++] = 'U';
