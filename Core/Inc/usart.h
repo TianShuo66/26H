@@ -83,6 +83,7 @@ HAL_StatusTypeDef Debug_PrintControlState(int16_t ball_x_deci_cm,
                                            int32_t position_error_deci_cm,
                                            int32_t ball_velocity_deci_cm_per_s,
                                            uint8_t fast_tilt_tracking,
+                                           uint8_t static_compensation_active,
                                            int32_t position_counts,
                                            int32_t position_centi_degrees,
                                            uint32_t task_elapsed_ms);

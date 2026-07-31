@@ -86,9 +86,9 @@ typedef enum
 // 静态维持倾斜脉冲
 #define MOTOR_STATIC_TILT_PULSES       60
 // 静态偏置调节阈值脉冲
-#define MOTOR_STATIC_BIAS_LIMIT_PULSES 60
+#define MOTOR_STATIC_BIAS_LIMIT_PULSES 30
 // 静态偏置单次调节脉冲步长
-#define MOTOR_STATIC_BIAS_STEP_PULSES  10
+#define MOTOR_STATIC_BIAS_STEP_PULSES  5
 // 静态偏置调节周期 80ms
 #define MOTOR_STATIC_BIAS_PERIOD_MS    80U
 
@@ -111,7 +111,9 @@ typedef enum
 // 倾斜控制增益分母
 #define BALL_TILT_GAIN_DIVISOR        100L
 // 钢球速度超过该值视为运动状态，单位：0.1cm/s
-#define BALL_MOTION_THRESHOLD_DECI_CM_S 10L
+#define BALL_MOTION_THRESHOLD_DECI_CM_S 3L
+// 静摩擦补偿前需要连续静止的时间
+#define BALL_STATIC_HOLD_MS            160U
 // 终点小误差下的最大倾角，避免低速来回冲击
 #define MOTOR_TERMINAL_TILT_LIMIT_PULSES 80
 #define TASK_POSITIVE_TARGET_DECI_CM    50
@@ -329,6 +331,7 @@ int main(void)
   uint32_t last_vision_measurement_counter = 0U;
   uint32_t last_ball_sample_ms = 0U;
   uint32_t last_static_bias_update = 0U;
+  uint32_t ball_still_start_ms = 0U;
   uint32_t task_start_ms = 0U;
   uint32_t task_settled_start_ms = 0U;
   uint32_t task_reverse_boost_until_ms = 0U;
@@ -352,6 +355,7 @@ int main(void)
   uint8_t previous_command_direction = 0U;
   uint8_t previous_command_active = 0U;
   uint8_t fast_tilt_tracking = 0U;
+  uint8_t static_compensation_active = 0U;
   CalibrationState_t calibration_state = CALIBRATION_IDLE;
   TaskState_t task_state = TASK_IDLE;
 
@@ -459,6 +463,7 @@ int main(void)
                                           - ball_x_est_deci_cm,
                                       ball_velocity_deci_cm_per_s,
                                       fast_tilt_tracking,
+                                      static_compensation_active,
                                       motor_position_counts,
                                       position_centi_degrees,
                                       now_ms - closed_loop_start_ms);
@@ -598,6 +603,8 @@ int main(void)
             motor_tilt_target_pulse = 0;
             motor_static_bias_pulse = 0;
             fast_tilt_tracking = 0U;
+            static_compensation_active = 0U;
+            ball_still_start_ms = now_ms;
             last_static_bias_update = now_ms;
             motor_position_valid = 1U;
             last_motor_position_ms = now_ms;
@@ -803,8 +810,25 @@ int main(void)
           int32_t step_limit;
           uint8_t direction;
           uint8_t fast_braking;
+          uint8_t static_ready;
 
           last_control_update = now_ms;
+          if (AbsInt32(ball_velocity_deci_cm_per_s)
+              <= BALL_MOTION_THRESHOLD_DECI_CM_S)
+          {
+            if (ball_still_start_ms == 0U)
+            {
+              ball_still_start_ms = now_ms;
+            }
+          }
+          else
+          {
+            ball_still_start_ms = 0U;
+          }
+          static_ready = ((ball_still_start_ms != 0U)
+                          && ((now_ms - ball_still_start_ms)
+                              >= BALL_STATIC_HOLD_MS)) ? 1U : 0U;
+          static_compensation_active = 0U;
 
           if ((AbsInt32(position_error) <= BALL_POSITION_DEADBAND_DECI_CM)
               && (AbsInt32(ball_velocity_deci_cm_per_s)
@@ -825,17 +849,16 @@ int main(void)
                                              MOTOR_TILT_TARGET_LIMIT_PULSES);
             /* Overcome static friction only while the ball is effectively still. */
             if ((AbsInt32(position_error) >= BALL_STATIC_TRIGGER_DECI_CM)
-                && (AbsInt32(ball_velocity_deci_cm_per_s)
-                 < BALL_MOTION_THRESHOLD_DECI_CM_S)
+                && (static_ready != 0U)
                 && (AbsInt32(desired_tilt_pulse) < MOTOR_STATIC_TILT_PULSES))
             {
               desired_tilt_pulse = (position_error < 0)
                                  ? MOTOR_STATIC_TILT_PULSES
                                  : -MOTOR_STATIC_TILT_PULSES;
+              static_compensation_active = 1U;
             }
             if ((AbsInt32(position_error) < BALL_STATIC_TRIGGER_DECI_CM)
-                || (AbsInt32(ball_velocity_deci_cm_per_s)
-                    >= BALL_MOTION_THRESHOLD_DECI_CM_S))
+                || (static_ready == 0U))
             {
               motor_static_bias_pulse = 0;
             }
@@ -859,6 +882,10 @@ int main(void)
                   MOTOR_STATIC_BIAS_LIMIT_PULSES);
             }
             desired_tilt_pulse += motor_static_bias_pulse;
+            if (motor_static_bias_pulse != 0)
+            {
+              static_compensation_active = 1U;
+            }
             desired_tilt_pulse = ClampInt32(desired_tilt_pulse,
                                              -MOTOR_TILT_TARGET_LIMIT_PULSES,
                                              MOTOR_TILT_TARGET_LIMIT_PULSES);
