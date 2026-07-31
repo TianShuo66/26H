@@ -144,6 +144,7 @@ typedef enum
 #define TASK_HOLD_POSITION_TOLERANCE_DECI_CM 5
 #define TASK_HOLD_VELOCITY_DECI_CM_S 5L
 #define TASK_HOLD_VERIFICATION_MS     800U
+#define TASK_HOLD_MIN_VALID_SAMPLES     12U
 #define TASK_MAX_DURATION_MS           5000U
 #define TASK_REVERSE_BOOST_MS            900U
 #define CALIBRATION_HOLD_MS            1000U
@@ -467,6 +468,7 @@ int main(void)
   uint32_t last_adaptive_tilt_update_ms = 0U;
   uint32_t task_start_ms = 0U;
   uint32_t task_settled_start_ms = 0U;
+  uint32_t task_hold_last_measurement_counter = 0U;
   uint32_t task_reverse_boost_until_ms = 0U;
   uint32_t calibration_start_ms = 0U;
   uint32_t calibration_phase_start_ms = 0U;
@@ -486,6 +488,8 @@ int main(void)
   uint8_t ball_state_valid = 0U;
   uint8_t bad_measurement_count = 0U;
   uint8_t motor_position_request_pending = 0U;
+  uint8_t ball_estimate_updated = 0U;
+  uint8_t task_hold_valid_sample_count = 0U;
   uint8_t previous_command_direction = 0U;
   uint8_t previous_command_active = 0U;
   uint8_t fast_tilt_tracking = 0U;
@@ -545,11 +549,12 @@ int main(void)
     /* USER CODE BEGIN 3 */
     uint32_t now_ms = HAL_GetTick();
 
-    (void)UpdateBallEstimate(&last_vision_measurement_counter,
-                             &last_ball_sample_ms, &ball_state_valid,
-                             &bad_measurement_count,
-                             &ball_x_est_deci_cm,
-                             &ball_velocity_deci_cm_per_s);
+    ball_estimate_updated = UpdateBallEstimate(&last_vision_measurement_counter,
+                                               &last_ball_sample_ms,
+                                               &ball_state_valid,
+                                               &bad_measurement_count,
+                                               &ball_x_est_deci_cm,
+                                               &ball_velocity_deci_cm_per_s);
 
     if (Emm_V5_Current_Position_Request_Failed())
     {
@@ -695,6 +700,8 @@ int main(void)
             last_adaptive_tilt_update_ms = now_ms;
             task_start_ms = now_ms;
             task_settled_start_ms = 0U;
+            task_hold_valid_sample_count = 0U;
+            task_hold_last_measurement_counter = last_vision_measurement_counter;
             task_reverse_boost_until_ms = 0U;
             previous_command_active = 0U;
             (void)Debug_PrintTaskEvent(TASK_EVENT_START, 0U);
@@ -723,6 +730,8 @@ int main(void)
             last_adaptive_tilt_update_ms = now_ms;
             task_start_ms = now_ms;
             task_settled_start_ms = 0U;
+            task_hold_valid_sample_count = 0U;
+            task_hold_last_measurement_counter = last_vision_measurement_counter;
             previous_command_active = 0U;
             (void)Debug_PrintTaskEvent(TASK_EVENT_START, 0U);
           }
@@ -797,6 +806,8 @@ int main(void)
               task_state = TASK_TO_POSITIVE;
               task_start_ms = now_ms;
               task_settled_start_ms = 0U;
+              task_hold_valid_sample_count = 0U;
+              task_hold_last_measurement_counter = last_vision_measurement_counter;
               task_reverse_boost_until_ms = 0U;
               (void)Debug_PrintTaskEvent(TASK_EVENT_START, 0U);
             }
@@ -805,6 +816,8 @@ int main(void)
               task_state = TASK_TO_CENTER;
               task_start_ms = now_ms;
               task_settled_start_ms = 0U;
+              task_hold_valid_sample_count = 0U;
+              task_hold_last_measurement_counter = last_vision_measurement_counter;
               (void)Debug_PrintTaskEvent(TASK_EVENT_START, 0U);
             }
             else
@@ -938,6 +951,8 @@ int main(void)
           adaptive_tilt_pulse = BALL_ADAPTIVE_TILT_INITIAL_PULSES;
           last_adaptive_tilt_update_ms = now_ms;
           task_settled_start_ms = 0U;
+          task_hold_valid_sample_count = 0U;
+          task_hold_last_measurement_counter = last_vision_measurement_counter;
           task_reverse_boost_until_ms = now_ms + TASK_REVERSE_BOOST_MS;
           (void)Debug_PrintTaskEvent(TASK_EVENT_REVERSE,
                                      now_ms - task_start_ms);
@@ -945,33 +960,48 @@ int main(void)
         else if ((task_state == TASK_TO_CENTER)
                  || (task_state == TASK_TO_NEGATIVE))
         {
-          if ((AbsInt32((int32_t)ball_x_est_deci_cm
-                        - target_x_deci_cm)
-               <= TASK_HOLD_POSITION_TOLERANCE_DECI_CM)
-              && (AbsInt32(ball_velocity_deci_cm_per_s)
-                  <= TASK_HOLD_VELOCITY_DECI_CM_S))
+          /* Only fresh, accepted camera samples may advance balance hold. */
+          if ((ball_estimate_updated != 0U)
+              && (last_vision_measurement_counter
+                  != task_hold_last_measurement_counter))
           {
-            if (task_settled_start_ms == 0U)
+            task_hold_last_measurement_counter = last_vision_measurement_counter;
+            if ((AbsInt32((int32_t)ball_x_est_deci_cm
+                          - target_x_deci_cm)
+                 <= TASK_HOLD_POSITION_TOLERANCE_DECI_CM)
+                && (AbsInt32(ball_velocity_deci_cm_per_s)
+                    <= TASK_HOLD_VELOCITY_DECI_CM_S))
             {
-              task_settled_start_ms = now_ms;
+              if (task_settled_start_ms == 0U)
+              {
+                task_settled_start_ms = last_ball_sample_ms;
+                task_hold_valid_sample_count = 1U;
+              }
+              else
+              {
+                task_hold_valid_sample_count++;
+              }
+              if (((last_ball_sample_ms - task_settled_start_ms)
+                   >= TASK_HOLD_VERIFICATION_MS)
+                  && (task_hold_valid_sample_count
+                      >= TASK_HOLD_MIN_VALID_SAMPLES))
+              {
+                task_state = TASK_HOLD;
+                motor_tilt_target_pulse = MotorPositionToPulse(
+                    motor_position_counts, motor_zero_counts);
+                previous_command_active = 0U;
+                static_compensation_active = 0U;
+                micro_adjust_active = 0U;
+                capture_braking_active = 0U;
+                (void)Debug_PrintTaskEvent(TASK_EVENT_HOLD,
+                                           now_ms - task_start_ms);
+              }
             }
-            else if ((now_ms - task_settled_start_ms)
-                     >= TASK_HOLD_VERIFICATION_MS)
+            else
             {
-              task_state = TASK_HOLD;
-              motor_tilt_target_pulse = MotorPositionToPulse(
-                  motor_position_counts, motor_zero_counts);
-              previous_command_active = 0U;
-              static_compensation_active = 0U;
-              micro_adjust_active = 0U;
-              capture_braking_active = 0U;
-              (void)Debug_PrintTaskEvent(TASK_EVENT_HOLD,
-                                         now_ms - task_start_ms);
+              task_settled_start_ms = 0U;
+              task_hold_valid_sample_count = 0U;
             }
-          }
-          else
-          {
-            task_settled_start_ms = 0U;
           }
         }
 
