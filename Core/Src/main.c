@@ -187,7 +187,11 @@ typedef struct
 #define TASK_CENTER_CAPTURE_BRAKE_BASE_PULSES 35L
 #define TASK_CENTER_CAPTURE_BRAKE_GAIN_NUMERATOR 2L
 #define TASK_CENTER_CAPTURE_BRAKE_LIMIT_PULSES 70L
-#define TASK_MAX_DURATION_MS           5000U
+#define TASK_NEGATIVE_CURVE_COMPENSATION_PULSES 12L
+#define TASK_NEGATIVE_CURVE_COMPENSATION_MIN_ERROR_DECI_CM (-35L)
+#define TASK_NEGATIVE_CURVE_COMPENSATION_MAX_ERROR_DECI_CM (-15L)
+#define TASK_NEGATIVE_CURVE_COMPENSATION_SPEED_DECI_CM_S 15L
+#define TASK_MAX_DURATION_MS           10000U
 #define TASK_REVERSE_BOOST_MS            900U
 #define CALIBRATION_HOLD_MS            1000U
 #define CALIBRATION_MOVE_TIMEOUT_MS    1500U
@@ -1209,6 +1213,17 @@ int main(void)
             {
               static_compensation_active = 0U;
             }
+          }
+          if ((task_state == TASK_TO_NEGATIVE)
+              && (position_error >= TASK_NEGATIVE_CURVE_COMPENSATION_MIN_ERROR_DECI_CM)
+              && (position_error <= TASK_NEGATIVE_CURVE_COMPENSATION_MAX_ERROR_DECI_CM)
+              && (ball_velocity_deci_cm_per_s
+                  >= -TASK_NEGATIVE_CURVE_COMPENSATION_SPEED_DECI_CM_S))
+          {
+            desired_tilt_pulse = ClampInt32(
+                desired_tilt_pulse + TASK_NEGATIVE_CURVE_COMPENSATION_PULSES,
+                -MOTOR_TILT_TARGET_LIMIT_PULSES,
+                MOTOR_TILT_TARGET_LIMIT_PULSES);
           }
           motor_tilt_target_pulse = desired_tilt_pulse;
           step = desired_tilt_pulse - motor_pulse_est;
