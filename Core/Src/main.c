@@ -53,6 +53,7 @@ typedef enum
 {
   FIXED_TASK_IDLE = 0,
   FIXED_TASK_POSITIVE_DRIVE,
+  FIXED_TASK_POSITIVE_COAST,
   FIXED_TASK_POSITIVE_BRAKE,
   FIXED_TASK_NEGATIVE_DRIVE,
   FIXED_TASK_NEGATIVE_BRAKE
@@ -167,11 +168,14 @@ typedef struct
 #define TASK_NEGATIVE_TARGET_DECI_CM   (-50)
 // Key1 固定相位任务：O -> +5cm -> -5cm。
 #define TASK_FIXED_POSITIVE_DRIVE_TILT_PULSES (-65L)
-#define TASK_FIXED_NEGATIVE_DRIVE_TILT_PULSES 70L
+#define TASK_FIXED_POSITIVE_COAST_TILT_PULSES 0L
+#define TASK_FIXED_POSITIVE_BRAKE_TILT_PULSES 70L
+#define TASK_FIXED_NEGATIVE_DRIVE_TILT_PULSES 35L
 #define TASK_FIXED_NEGATIVE_BRAKE_TILT_PULSES (-70L)
+#define TASK_FIXED_POSITIVE_COAST_START_DECI_CM 10
 #define TASK_FIXED_POSITIVE_BRAKE_START_DECI_CM 31
 #define TASK_FIXED_POSITIVE_REACHED_DECI_CM 48
-#define TASK_FIXED_NEGATIVE_BRAKE_START_DECI_CM (-42)
+#define TASK_FIXED_NEGATIVE_BRAKE_START_DECI_CM (-35)
 #define TASK_START_POSITION_TOLERANCE_DECI_CM 15
 #define TASK_SETTLED_POSITION_TOLERANCE_DECI_CM 8
 #define TASK_SETTLED_VELOCITY_DECI_CM_S 20L
@@ -1094,6 +1098,12 @@ int main(void)
         }
         else if ((fixed_task_phase == FIXED_TASK_POSITIVE_DRIVE)
                  && (ball_x_est_deci_cm
+                     >= TASK_FIXED_POSITIVE_COAST_START_DECI_CM))
+        {
+          fixed_task_phase = FIXED_TASK_POSITIVE_COAST;
+        }
+        else if ((fixed_task_phase == FIXED_TASK_POSITIVE_COAST)
+                 && (ball_x_est_deci_cm
                      >= TASK_FIXED_POSITIVE_BRAKE_START_DECI_CM))
         {
           fixed_task_phase = FIXED_TASK_POSITIVE_BRAKE;
@@ -1298,8 +1308,15 @@ int main(void)
           {
             desired_tilt_pulse = TASK_FIXED_POSITIVE_DRIVE_TILT_PULSES;
           }
-          else if ((fixed_task_phase == FIXED_TASK_POSITIVE_BRAKE)
-                   || (fixed_task_phase == FIXED_TASK_NEGATIVE_DRIVE))
+          else if (fixed_task_phase == FIXED_TASK_POSITIVE_COAST)
+          {
+            desired_tilt_pulse = TASK_FIXED_POSITIVE_COAST_TILT_PULSES;
+          }
+          else if (fixed_task_phase == FIXED_TASK_POSITIVE_BRAKE)
+          {
+            desired_tilt_pulse = TASK_FIXED_POSITIVE_BRAKE_TILT_PULSES;
+          }
+          else if (fixed_task_phase == FIXED_TASK_NEGATIVE_DRIVE)
           {
             desired_tilt_pulse = TASK_FIXED_NEGATIVE_DRIVE_TILT_PULSES;
           }
