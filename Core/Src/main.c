@@ -807,8 +807,6 @@ int main(void)
         uint8_t start_requested = 0U;
         uint8_t task_start_requested = 0U;
         uint8_t center_start_requested = 0U;
-        int16_t vision_zero_raw_x;
-        int16_t vision_zero_offset;
 
         last_key_action = HAL_GetTick();
         if (calibration_state != CALIBRATION_IDLE)
@@ -816,24 +814,6 @@ int main(void)
           StopAndDisableMotor(&motor_enabled);
           calibration_state = CALIBRATION_IDLE;
           motor_position_request_pending = 0U;
-        }
-        else if ((pressed_keys & 0x0CU) == 0x0CU)
-        {
-          if ((closed_loop_enabled == 0U)
-              && (Vision_CalibrateXZero(&vision_zero_raw_x,
-                                        &vision_zero_offset) != 0U))
-          {
-            ball_state_valid = 0U;
-            bad_measurement_count = 0U;
-            ball_x_est_deci_cm = 0;
-            ball_velocity_deci_cm_per_s = 0;
-            (void)Debug_PrintVisionXZero(vision_zero_raw_x,
-                                         vision_zero_offset);
-          }
-          else
-          {
-            (void)Debug_PrintVisionXZeroRejected(closed_loop_enabled);
-          }
         }
         else if ((pressed_keys & 0x01U) != 0U)
         {

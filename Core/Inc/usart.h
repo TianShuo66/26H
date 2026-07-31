@@ -71,14 +71,9 @@ void MX_USART2_UART_Init(void);
 void MX_UART4_Init(void);
 void MX_USART1_UART_Init(void);
 HAL_StatusTypeDef Vision_StartReception(void);
-uint8_t Vision_CalibrateXZero(int16_t *raw_x_deci_cm,
-                              int16_t *offset_deci_cm);
 HAL_StatusTypeDef Debug_StartCommandReception(void);
 uint8_t Debug_GetCommand(void);
 HAL_StatusTypeDef Vision_DebugPrintLatest(void);
-HAL_StatusTypeDef Debug_PrintVisionXZero(int16_t raw_x_deci_cm,
-                                         int16_t offset_deci_cm);
-HAL_StatusTypeDef Debug_PrintVisionXZeroRejected(uint8_t active);
 HAL_StatusTypeDef Debug_PrintMotorPosition(int32_t position_counts,
                                            int32_t position_centi_degrees);
 HAL_StatusTypeDef Debug_PrintControlState(int16_t ball_x_deci_cm,
