@@ -31,6 +31,9 @@ static uint8_t debug_control_buffer[192];
 static volatile uint8_t debug_control_tx_busy;
 static volatile uint8_t debug_command;
 
+/* Steel ball placed at mechanical O reports B,-102,y before correction. */
+#define VISION_X_ZERO_OFFSET_DECI_CM (-102L)
+
 volatile int16_t vision_x_deci_cm;
 volatile int16_t vision_y_deci_cm;
 volatile uint8_t vision_data_valid;
@@ -79,6 +82,7 @@ static void Vision_ParseLine(void)
   uint8_t index = 2U;
   int16_t x;
   int16_t y;
+  int32_t corrected_x;
 
   if ((vision_rx_length == 1U) && (vision_rx_line[0] == 'N'))
   {
@@ -93,7 +97,12 @@ static void Vision_ParseLine(void)
   {
     return;
   }
-  vision_x_deci_cm = x;
+  corrected_x = (int32_t)x - VISION_X_ZERO_OFFSET_DECI_CM;
+  if ((corrected_x < -32768L) || (corrected_x > 32767L))
+  {
+    return;
+  }
+  vision_x_deci_cm = (int16_t)corrected_x;
   vision_y_deci_cm = y;
   vision_last_update_ms = HAL_GetTick();
   vision_data_valid = 1U;
