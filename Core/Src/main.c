@@ -113,13 +113,12 @@ typedef enum
 #define BALL_VREF_LIMIT_DECI_CM_S     100L
 #define BALL_TILT_GAIN_NUMERATOR       45L
 #define BALL_TILT_GAIN_DIVISOR        100L
-// 静摩擦自适应：推进速度未达到 VREF 的 60% 时提高最小倾角
-#define BALL_ADAPTIVE_PROGRESS_PERCENT 60L
-#define BALL_ADAPTIVE_TILT_INITIAL_PULSES 35L
+// 静摩擦自适应：速度低于 1.5cm/s 时逐步提高最小倾角
+#define BALL_ADAPTIVE_MOTION_DECI_CM_S 15L
+#define BALL_ADAPTIVE_TILT_INITIAL_PULSES 15L
 #define BALL_ADAPTIVE_TILT_STEP_PULSES    5L
-#define BALL_ADAPTIVE_TILT_RELEASE_STEP_PULSES 10L
-#define BALL_ADAPTIVE_TILT_LIMIT_PULSES 70L
-#define BALL_ADAPTIVE_TILT_PERIOD_MS    120U
+#define BALL_ADAPTIVE_TILT_LIMIT_PULSES 150L
+#define BALL_ADAPTIVE_TILT_PERIOD_MS    250U
 // O 到 +5cm 起步时允许更大的静摩擦补偿，确保任务能在时限内起动
 #define TASK_POSITIVE_LAUNCH_ADAPTIVE_LIMIT_PULSES 120L
 // 终端稳定范围允许在目标 +/-0.8cm 内小幅摆动
@@ -353,20 +352,10 @@ static int32_t CalculateCascadeTilt(int32_t position_error_deci_cm,
 static uint8_t IsAdaptiveTiltNeeded(int32_t position_error_deci_cm,
                                     int32_t velocity_deci_cm_per_s)
 {
-  int32_t velocity_reference = CalculateVelocityReference(
-      position_error_deci_cm);
-  int32_t progress_velocity = 0L;
-
-  if (((position_error_deci_cm > 0) && (velocity_deci_cm_per_s > 0))
-      || ((position_error_deci_cm < 0) && (velocity_deci_cm_per_s < 0)))
-  {
-    progress_velocity = AbsInt32(velocity_deci_cm_per_s);
-  }
   return ((AbsInt32(position_error_deci_cm)
            > BALL_MICRO_ADJUST_ZONE_DECI_CM)
-          && ((progress_velocity * 100L)
-              < (AbsInt32(velocity_reference)
-                 * BALL_ADAPTIVE_PROGRESS_PERCENT))) ? 1U : 0U;
+          && (AbsInt32(velocity_deci_cm_per_s)
+              <= BALL_ADAPTIVE_MOTION_DECI_CM_S)) ? 1U : 0U;
 }
 
 static int32_t ApplyAdaptiveTilt(int32_t desired_tilt_pulse,
@@ -1012,11 +1001,7 @@ int main(void)
                     >= BALL_ADAPTIVE_TILT_PERIOD_MS))
             {
               last_adaptive_tilt_update_ms = now_ms;
-              adaptive_tilt_pulse = ClampInt32(
-                  adaptive_tilt_pulse
-                  - BALL_ADAPTIVE_TILT_RELEASE_STEP_PULSES,
-                  BALL_ADAPTIVE_TILT_INITIAL_PULSES,
-                  BALL_ADAPTIVE_TILT_LIMIT_PULSES);
+              adaptive_tilt_pulse -= BALL_ADAPTIVE_TILT_STEP_PULSES;
             }
           }
           desired_tilt_pulse = ApplyCaptureBrake(
