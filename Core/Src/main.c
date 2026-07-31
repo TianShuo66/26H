@@ -140,11 +140,9 @@ typedef enum
 #define TASK_START_POSITION_TOLERANCE_DECI_CM 15
 #define TASK_SETTLED_POSITION_TOLERANCE_DECI_CM 8
 #define TASK_SETTLED_VELOCITY_DECI_CM_S 20L
-// 进入保持前采用更严格的确认，排除仍有惯性漂移的瞬间平衡
+// 连续 800ms 位于目标误差内即可进入保持。
 #define TASK_HOLD_POSITION_TOLERANCE_DECI_CM 7
-#define TASK_HOLD_VELOCITY_DECI_CM_S 5L
 #define TASK_HOLD_VERIFICATION_MS     800U
-#define TASK_HOLD_MIN_VALID_SAMPLES     12U
 // 回中心最后 1.5cm 使用小倾角微调，避免通用起步补偿来回累积。
 #define TASK_CENTER_FINE_ZONE_DECI_CM   15L
 #define TASK_CENTER_FINE_TILT_LIMIT_PULSES 18L
@@ -494,7 +492,6 @@ int main(void)
   uint8_t bad_measurement_count = 0U;
   uint8_t motor_position_request_pending = 0U;
   uint8_t ball_estimate_updated = 0U;
-  uint8_t task_hold_valid_sample_count = 0U;
   uint8_t previous_command_direction = 0U;
   uint8_t previous_command_active = 0U;
   uint8_t fast_tilt_tracking = 0U;
@@ -705,7 +702,6 @@ int main(void)
             last_adaptive_tilt_update_ms = now_ms;
             task_start_ms = now_ms;
             task_settled_start_ms = 0U;
-            task_hold_valid_sample_count = 0U;
             task_hold_last_measurement_counter = last_vision_measurement_counter;
             task_reverse_boost_until_ms = 0U;
             previous_command_active = 0U;
@@ -735,7 +731,6 @@ int main(void)
             last_adaptive_tilt_update_ms = now_ms;
             task_start_ms = now_ms;
             task_settled_start_ms = 0U;
-            task_hold_valid_sample_count = 0U;
             task_hold_last_measurement_counter = last_vision_measurement_counter;
             previous_command_active = 0U;
             (void)Debug_PrintTaskEvent(TASK_EVENT_START, 0U);
@@ -811,7 +806,6 @@ int main(void)
               task_state = TASK_TO_POSITIVE;
               task_start_ms = now_ms;
               task_settled_start_ms = 0U;
-              task_hold_valid_sample_count = 0U;
               task_hold_last_measurement_counter = last_vision_measurement_counter;
               task_reverse_boost_until_ms = 0U;
               (void)Debug_PrintTaskEvent(TASK_EVENT_START, 0U);
@@ -821,7 +815,6 @@ int main(void)
               task_state = TASK_TO_CENTER;
               task_start_ms = now_ms;
               task_settled_start_ms = 0U;
-              task_hold_valid_sample_count = 0U;
               task_hold_last_measurement_counter = last_vision_measurement_counter;
               (void)Debug_PrintTaskEvent(TASK_EVENT_START, 0U);
             }
@@ -956,7 +949,6 @@ int main(void)
           adaptive_tilt_pulse = BALL_ADAPTIVE_TILT_INITIAL_PULSES;
           last_adaptive_tilt_update_ms = now_ms;
           task_settled_start_ms = 0U;
-          task_hold_valid_sample_count = 0U;
           task_hold_last_measurement_counter = last_vision_measurement_counter;
           task_reverse_boost_until_ms = now_ms + TASK_REVERSE_BOOST_MS;
           (void)Debug_PrintTaskEvent(TASK_EVENT_REVERSE,
@@ -971,25 +963,15 @@ int main(void)
                   != task_hold_last_measurement_counter))
           {
             task_hold_last_measurement_counter = last_vision_measurement_counter;
-            if ((AbsInt32((int32_t)ball_x_est_deci_cm
-                          - target_x_deci_cm)
-                 <= TASK_HOLD_POSITION_TOLERANCE_DECI_CM)
-                && (AbsInt32(ball_velocity_deci_cm_per_s)
-                    <= TASK_HOLD_VELOCITY_DECI_CM_S))
+            if (AbsInt32((int32_t)ball_x_est_deci_cm - target_x_deci_cm)
+                <= TASK_HOLD_POSITION_TOLERANCE_DECI_CM)
             {
               if (task_settled_start_ms == 0U)
               {
                 task_settled_start_ms = last_ball_sample_ms;
-                task_hold_valid_sample_count = 1U;
-              }
-              else
-              {
-                task_hold_valid_sample_count++;
               }
               if (((last_ball_sample_ms - task_settled_start_ms)
-                   >= TASK_HOLD_VERIFICATION_MS)
-                  && (task_hold_valid_sample_count
-                      >= TASK_HOLD_MIN_VALID_SAMPLES))
+                   >= TASK_HOLD_VERIFICATION_MS))
               {
                 task_state = TASK_HOLD;
                 motor_tilt_target_pulse = MotorPositionToPulse(
@@ -1005,7 +987,6 @@ int main(void)
             else
             {
               task_settled_start_ms = 0U;
-              task_hold_valid_sample_count = 0U;
             }
           }
         }
