@@ -568,6 +568,71 @@ static void Debug_AppendDeciCm(uint8_t *buffer, uint8_t *length, int16_t value)
   buffer[(*length)++] = (uint8_t)('0' + (magnitude % 10U));
 }
 
+HAL_StatusTypeDef Debug_PrintTaskEvent(TaskEvent_t event,
+                                       uint32_t task_elapsed_ms)
+{
+  const char *event_name;
+  uint8_t event_length;
+  uint8_t *buffer = debug_control_buffer;
+  uint8_t length = 0U;
+
+  if (debug_control_tx_busy != 0U)
+  {
+    return HAL_BUSY;
+  }
+  switch (event)
+  {
+    case TASK_EVENT_START:
+      event_name = "START";
+      event_length = sizeof("START") - 1U;
+      break;
+    case TASK_EVENT_REVERSE:
+      event_name = "REVERSE";
+      event_length = sizeof("REVERSE") - 1U;
+      break;
+    case TASK_EVENT_COMPLETE:
+      event_name = "COMPLETE";
+      event_length = sizeof("COMPLETE") - 1U;
+      break;
+    case TASK_EVENT_TIMEOUT:
+      event_name = "TIMEOUT";
+      event_length = sizeof("TIMEOUT") - 1U;
+      break;
+    case TASK_EVENT_START_POSITION:
+      event_name = "REJECT_START_POSITION";
+      event_length = sizeof("REJECT_START_POSITION") - 1U;
+      break;
+    default:
+      event_name = "UNKNOWN";
+      event_length = sizeof("UNKNOWN") - 1U;
+      break;
+  }
+  buffer[length++] = 'T';
+  buffer[length++] = 'A';
+  buffer[length++] = 'S';
+  buffer[length++] = 'K';
+  buffer[length++] = ',';
+  while (event_length > 0U)
+  {
+    buffer[length++] = (uint8_t)*event_name++;
+    event_length--;
+  }
+  buffer[length++] = ',';
+  buffer[length++] = 'M';
+  buffer[length++] = 'S';
+  buffer[length++] = ',';
+  Debug_AppendUnsignedInt32(buffer, &length, task_elapsed_ms);
+  buffer[length++] = '\r';
+  buffer[length++] = '\n';
+  debug_control_tx_busy = 1U;
+  if (HAL_UART_Transmit_IT(&huart1, buffer, length) != HAL_OK)
+  {
+    debug_control_tx_busy = 0U;
+    return HAL_ERROR;
+  }
+  return HAL_OK;
+}
+
 HAL_StatusTypeDef Debug_PrintMotorPosition(int32_t position_counts,
                                            int32_t position_centi_degrees)
 {

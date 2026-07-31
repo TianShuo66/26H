@@ -40,6 +40,14 @@ typedef enum
   CALIBRATION_RETURN
 } CalibrationState_t;
 
+typedef enum
+{
+  TASK_IDLE = 0,
+  TASK_TO_POSITIVE,
+  TASK_TO_NEGATIVE,
+  TASK_COMPLETE
+} TaskState_t;
+
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -60,7 +68,7 @@ typedef enum
 // 电机控制运算周期 40ms
 #define MOTOR_CONTROL_PERIOD_MS       40U
 // 短距离微动最大脉冲
-#define MOTOR_SHORT_STEP_MAX_PULSES   8
+#define MOTOR_SHORT_STEP_MAX_PULSES   12
 // 短步运动转速 1000RPM
 #define MOTOR_SHORT_STEP_SPEED_RPM    1000U
 // 短步加减速参数
@@ -74,9 +82,9 @@ typedef enum
 // 静态偏置调节阈值脉冲
 #define MOTOR_STATIC_BIAS_LIMIT_PULSES 60
 // 静态偏置单次调节脉冲步长
-#define MOTOR_STATIC_BIAS_STEP_PULSES  2
-// 静态偏置调节周期 200ms
-#define MOTOR_STATIC_BIAS_PERIOD_MS    200U
+#define MOTOR_STATIC_BIAS_STEP_PULSES  10
+// 静态偏置调节周期 80ms
+#define MOTOR_STATIC_BIAS_PERIOD_MS    80U
 
 // 视觉图像超时阈值，无目标判定失效 180ms
 #define VISION_TIMEOUT_MS             500U
@@ -103,6 +111,14 @@ typedef enum
 #define MODEL_BRAKE_DECEL_FOR_NEGATIVE_VELOCITY 22L
 // 预测停车距离上限，避免异常视觉速度造成过大的反向指令，单位：0.1cm
 #define MODEL_MAX_STOP_DISTANCE_DECI_CM 240L
+#define TASK_POSITIVE_TARGET_DECI_CM    50
+#define TASK_NEGATIVE_TARGET_DECI_CM   (-50)
+#define TASK_POSITIVE_REVERSE_DECI_CM   45
+#define TASK_START_POSITION_TOLERANCE_DECI_CM 15
+#define TASK_SETTLED_POSITION_TOLERANCE_DECI_CM 10
+#define TASK_SETTLED_VELOCITY_DECI_CM_S 5L
+#define TASK_SETTLED_HOLD_MS            120U
+#define TASK_MAX_DURATION_MS           5000U
 #define CALIBRATION_HOLD_MS            1000U
 #define CALIBRATION_MOVE_TIMEOUT_MS    1500U
 #define CALIBRATION_PULSE_TOLERANCE    2
@@ -322,6 +338,8 @@ int main(void)
   uint32_t last_vision_measurement_counter = 0U;
   uint32_t last_ball_sample_ms = 0U;
   uint32_t last_static_bias_update = 0U;
+  uint32_t task_start_ms = 0U;
+  uint32_t task_settled_start_ms = 0U;
   uint32_t calibration_start_ms = 0U;
   uint32_t calibration_phase_start_ms = 0U;
   int32_t motor_position_counts = 0;
@@ -344,6 +362,7 @@ int main(void)
   uint8_t previous_command_direction = 0U;
   uint8_t previous_command_active = 0U;
   CalibrationState_t calibration_state = CALIBRATION_IDLE;
+  TaskState_t task_state = TASK_IDLE;
 
   /* USER CODE BEGIN 1 */
 
@@ -513,6 +532,7 @@ int main(void)
       if ((pressed_keys != 0U) && ((HAL_GetTick() - last_key_action) >= 50U))
       {
         uint8_t start_requested = 0U;
+        uint8_t task_start_requested = 0U;
 
         last_key_action = HAL_GetTick();
         if (calibration_state != CALIBRATION_IDLE)
@@ -528,10 +548,13 @@ int main(void)
             StopAndDisableMotor(&motor_enabled);
             closed_loop_enabled = 0U;
             previous_command_active = 0U;
+            task_state = TASK_IDLE;
           }
           else
           {
+            target_x_deci_cm = TASK_POSITIVE_TARGET_DECI_CM;
             start_requested = 1U;
+            task_start_requested = 1U;
           }
         }
         else if ((pressed_keys & 0x02U) != 0U)
@@ -541,12 +564,12 @@ int main(void)
         }
         else if ((pressed_keys & 0x04U) != 0U)
         {
-          target_x_deci_cm = 50;
+          target_x_deci_cm = TASK_POSITIVE_TARGET_DECI_CM;
           start_requested = (closed_loop_enabled == 0U) ? 1U : 0U;
         }
         else if ((pressed_keys & 0x08U) != 0U)
         {
-          target_x_deci_cm = -50;
+          target_x_deci_cm = TASK_NEGATIVE_TARGET_DECI_CM;
           start_requested = (closed_loop_enabled == 0U) ? 1U : 0U;
         }
 
@@ -564,6 +587,14 @@ int main(void)
                                                   &motor_position_counts))
           {
             (void)Debug_PrintClosedLoopRejected(CLOSED_LOOP_REJECT_POSITION_READ);
+          }
+          else if ((task_start_requested != 0U)
+                   && ((AbsInt32(ball_x_est_deci_cm)
+                        > TASK_START_POSITION_TOLERANCE_DECI_CM)
+                       || (AbsInt32(ball_velocity_deci_cm_per_s)
+                           > TASK_SETTLED_VELOCITY_DECI_CM_S)))
+          {
+            (void)Debug_PrintTaskEvent(TASK_EVENT_START_POSITION, 0U);
           }
           else
           {
@@ -585,6 +616,17 @@ int main(void)
             previous_command_active = 0U;
             motor_position_request_pending = 0U;
             (void)Debug_PrintClosedLoopEnabled();
+            if (task_start_requested != 0U)
+            {
+              task_state = TASK_TO_POSITIVE;
+              task_start_ms = now_ms;
+              task_settled_start_ms = 0U;
+              (void)Debug_PrintTaskEvent(TASK_EVENT_START, 0U);
+            }
+            else
+            {
+              task_state = TASK_IDLE;
+            }
           }
         }
       }
@@ -693,8 +735,55 @@ int main(void)
       }
       else
       {
-        motor_pulse_est = MotorPositionToPulse(motor_position_counts,
-                                                motor_zero_counts);
+        if (((task_state == TASK_TO_POSITIVE)
+             || (task_state == TASK_TO_NEGATIVE))
+            && ((now_ms - task_start_ms) > TASK_MAX_DURATION_MS))
+        {
+          StopAndDisableMotor(&motor_enabled);
+          closed_loop_enabled = 0U;
+          previous_command_active = 0U;
+          task_state = TASK_IDLE;
+          (void)Debug_PrintTaskEvent(TASK_EVENT_TIMEOUT,
+                                     now_ms - task_start_ms);
+        }
+        else if ((task_state == TASK_TO_POSITIVE)
+                 && (ball_x_est_deci_cm >= TASK_POSITIVE_REVERSE_DECI_CM))
+        {
+          target_x_deci_cm = TASK_NEGATIVE_TARGET_DECI_CM;
+          task_state = TASK_TO_NEGATIVE;
+          task_settled_start_ms = 0U;
+          (void)Debug_PrintTaskEvent(TASK_EVENT_REVERSE,
+                                     now_ms - task_start_ms);
+        }
+        else if (task_state == TASK_TO_NEGATIVE)
+        {
+          if ((AbsInt32((int32_t)ball_x_est_deci_cm
+                        - TASK_NEGATIVE_TARGET_DECI_CM)
+               <= TASK_SETTLED_POSITION_TOLERANCE_DECI_CM)
+              && (AbsInt32(ball_velocity_deci_cm_per_s)
+                  <= TASK_SETTLED_VELOCITY_DECI_CM_S))
+          {
+            if (task_settled_start_ms == 0U)
+            {
+              task_settled_start_ms = now_ms;
+            }
+            else if ((now_ms - task_settled_start_ms) >= TASK_SETTLED_HOLD_MS)
+            {
+              task_state = TASK_COMPLETE;
+              (void)Debug_PrintTaskEvent(TASK_EVENT_COMPLETE,
+                                         now_ms - task_start_ms);
+            }
+          }
+          else
+          {
+            task_settled_start_ms = 0U;
+          }
+        }
+
+        if (closed_loop_enabled != 0U)
+        {
+          motor_pulse_est = MotorPositionToPulse(motor_position_counts,
+                                                  motor_zero_counts);
         if (motor_pulse_est >= MOTOR_SOFTWARE_LIMIT_PULSES)
         {
           StopAndDisableMotor(&motor_enabled);
@@ -831,7 +920,8 @@ int main(void)
           motor_position_request_pending = 1U;
         }
       }
-    }
+        }
+      }
   }
   /* USER CODE END 3 */
 }

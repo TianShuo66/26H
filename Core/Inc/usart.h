@@ -55,6 +55,15 @@ typedef enum
   CLOSED_LOOP_REJECT_UPPER_LIMIT
 } ClosedLoopRejectReason_t;
 
+typedef enum
+{
+  TASK_EVENT_START = 0U,
+  TASK_EVENT_REVERSE,
+  TASK_EVENT_COMPLETE,
+  TASK_EVENT_TIMEOUT,
+  TASK_EVENT_START_POSITION
+} TaskEvent_t;
+
 /* USER CODE END Private defines */
 
 void MX_USART2_UART_Init(void);
@@ -78,6 +87,8 @@ HAL_StatusTypeDef Debug_PrintControlState(int16_t ball_x_deci_cm,
                                            uint32_t task_elapsed_ms);
 HAL_StatusTypeDef Debug_PrintClosedLoopEnabled(void);
 HAL_StatusTypeDef Debug_PrintClosedLoopRejected(ClosedLoopRejectReason_t reason);
+HAL_StatusTypeDef Debug_PrintTaskEvent(TaskEvent_t event,
+                                       uint32_t task_elapsed_ms);
 HAL_StatusTypeDef Debug_PrintCalibrationState(uint8_t phase,
                                               int32_t target_pulse,
                                               int16_t ball_x_deci_cm,
