@@ -120,8 +120,14 @@ typedef enum
 #define BALL_ADAPTIVE_TILT_RELEASE_STEP_PULSES 10L
 #define BALL_ADAPTIVE_TILT_LIMIT_PULSES 70L
 #define BALL_ADAPTIVE_TILT_PERIOD_MS    120U
-// 微调范围仅用于串口状态观察，不再压低级联控制输出
-#define BALL_MICRO_ADJUST_ZONE_DECI_CM 15
+// 终端稳定范围允许在目标 +/-0.8cm 内小幅摆动
+#define BALL_MICRO_ADJUST_ZONE_DECI_CM 8L
+// 提前进入终端制动区，防止带着高速跨过 +/-0.8cm 边界
+#define BALL_CAPTURE_BRAKE_ZONE_DECI_CM 20L
+#define BALL_CAPTURE_SPEED_LIMIT_DECI_CM_S 15L
+#define MOTOR_CAPTURE_BRAKE_BASE_PULSES 35L
+#define MOTOR_CAPTURE_BRAKE_GAIN_NUMERATOR 2L
+#define MOTOR_CAPTURE_BRAKE_LIMIT_PULSES 70L
 #define TASK_POSITIVE_TARGET_DECI_CM    50
 #define TASK_NEGATIVE_TARGET_DECI_CM   (-50)
 #define TASK_POSITIVE_REVERSE_DECI_CM   45
@@ -350,7 +356,7 @@ static uint8_t IsAdaptiveTiltNeeded(int32_t position_error_deci_cm,
     progress_velocity = AbsInt32(velocity_deci_cm_per_s);
   }
   return ((AbsInt32(position_error_deci_cm)
-           > TASK_SETTLED_POSITION_TOLERANCE_DECI_CM)
+           > BALL_MICRO_ADJUST_ZONE_DECI_CM)
           && ((progress_velocity * 100L)
               < (AbsInt32(velocity_reference)
                  * BALL_ADAPTIVE_PROGRESS_PERCENT))) ? 1U : 0U;
@@ -374,6 +380,32 @@ static int32_t ApplyAdaptiveTilt(int32_t desired_tilt_pulse,
     return adaptive_tilt_pulse;
   }
   return desired_tilt_pulse;
+}
+
+static int32_t ApplyCaptureBrake(int32_t desired_tilt_pulse,
+                                 int32_t position_error_deci_cm,
+                                 int32_t velocity_deci_cm_per_s,
+                                 uint8_t *capture_braking_active)
+{
+  int32_t speed;
+  int32_t brake_tilt;
+
+  if ((AbsInt32(position_error_deci_cm) > BALL_CAPTURE_BRAKE_ZONE_DECI_CM)
+      || (AbsInt32(velocity_deci_cm_per_s)
+          <= BALL_CAPTURE_SPEED_LIMIT_DECI_CM_S)
+      || (((position_error_deci_cm > 0) && (velocity_deci_cm_per_s <= 0))
+          || ((position_error_deci_cm < 0) && (velocity_deci_cm_per_s >= 0))))
+  {
+    return desired_tilt_pulse;
+  }
+  speed = AbsInt32(velocity_deci_cm_per_s);
+  brake_tilt = ClampInt32(MOTOR_CAPTURE_BRAKE_BASE_PULSES
+               + ((speed - BALL_CAPTURE_SPEED_LIMIT_DECI_CM_S)
+                  * MOTOR_CAPTURE_BRAKE_GAIN_NUMERATOR),
+               MOTOR_CAPTURE_BRAKE_BASE_PULSES,
+               MOTOR_CAPTURE_BRAKE_LIMIT_PULSES);
+  *capture_braking_active = 1U;
+  return (velocity_deci_cm_per_s > 0) ? brake_tilt : -brake_tilt;
 }
 
 static int32_t CalibrationTargetFromCommand(uint8_t command)
@@ -441,6 +473,7 @@ int main(void)
   uint8_t fast_tilt_tracking = 0U;
   uint8_t static_compensation_active = 0U;
   uint8_t micro_adjust_active = 0U;
+  uint8_t capture_braking_active = 0U;
   CalibrationState_t calibration_state = CALIBRATION_IDLE;
   TaskState_t task_state = TASK_IDLE;
 
@@ -549,12 +582,13 @@ int main(void)
                                           - ball_x_est_deci_cm,
                                       ball_velocity_deci_cm_per_s,
                                       CalculateVelocityReference(
-                                          (int32_t)target_x_deci_cm
+                                      (int32_t)target_x_deci_cm
                                           - ball_x_est_deci_cm),
                                       adaptive_tilt_pulse,
                                       fast_tilt_tracking,
                                       static_compensation_active,
                                       micro_adjust_active,
+                                      capture_braking_active,
                                       motor_position_counts,
                                       position_centi_degrees,
                                       now_ms - closed_loop_start_ms);
@@ -696,6 +730,7 @@ int main(void)
             fast_tilt_tracking = 0U;
             static_compensation_active = 0U;
             micro_adjust_active = 0U;
+            capture_braking_active = 0U;
             last_adaptive_tilt_update_ms = now_ms;
             motor_position_valid = 1U;
             last_motor_position_ms = now_ms;
@@ -903,6 +938,7 @@ int main(void)
 
           last_control_update = now_ms;
           static_compensation_active = 0U;
+          capture_braking_active = 0U;
           micro_adjust_active = (AbsInt32(position_error)
                                  <= BALL_MICRO_ADJUST_ZONE_DECI_CM) ? 1U : 0U;
           desired_tilt_pulse = CalculateCascadeTilt(
@@ -936,6 +972,13 @@ int main(void)
                   BALL_ADAPTIVE_TILT_INITIAL_PULSES,
                   BALL_ADAPTIVE_TILT_LIMIT_PULSES);
             }
+          }
+          desired_tilt_pulse = ApplyCaptureBrake(
+              desired_tilt_pulse, position_error, ball_velocity_deci_cm_per_s,
+              &capture_braking_active);
+          if (capture_braking_active != 0U)
+          {
+            static_compensation_active = 0U;
           }
           motor_tilt_target_pulse = desired_tilt_pulse;
           step = desired_tilt_pulse - motor_pulse_est;
