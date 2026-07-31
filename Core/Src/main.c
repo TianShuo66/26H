@@ -160,7 +160,7 @@ typedef struct
 #define TASK_START_POSITION_TOLERANCE_DECI_CM 15
 #define TASK_SETTLED_POSITION_TOLERANCE_DECI_CM 8
 #define TASK_SETTLED_VELOCITY_DECI_CM_S 20L
-// -5cm 连续 800ms 位于目标误差内即可进入保持。
+// -6cm 连续 800ms 位于目标误差内即可进入保持。
 #define TASK_NEGATIVE_HOLD_POSITION_TOLERANCE_DECI_CM 7
 #define TASK_NEGATIVE_HOLD_VERIFICATION_MS     800U
 // 回中心最后 1.5cm 使用小倾角微调，避免通用起步补偿来回累积。
@@ -1052,7 +1052,7 @@ int main(void)
         }
         else if (task_state == TASK_TO_NEGATIVE)
         {
-          /* Only fresh, accepted camera samples may advance -5cm hold. */
+          /* Only fresh, accepted camera samples may advance -6cm hold. */
           if ((ball_estimate_updated != 0U)
               && (last_vision_measurement_counter
                   != task_hold_last_measurement_counter))
