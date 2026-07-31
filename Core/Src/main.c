@@ -101,7 +101,7 @@ typedef enum
 // 小球速度死区 0.1cm/s
 #define BALL_VELOCITY_DEADBAND_DECI_CM_S 20L
 #define BALL_SETTLED_VELOCITY_DECI_CM_S 5L
-#define BALL_STATIC_TRIGGER_DECI_CM   15
+#define BALL_STATIC_TRIGGER_DECI_CM   10
 // 位置环增益分子
 #define BALL_POSITION_GAIN_NUMERATOR  100L
 // 速度环增益分子
@@ -112,7 +112,7 @@ typedef enum
 #define MODEL_PREDICT_MIN_VELOCITY_DECI_CM_S 10L
 // 由实测 +40 / -40 脉冲得到的反向制动加速度，单位：0.1cm/s^2
 #define MODEL_BRAKE_DECEL_FOR_POSITIVE_VELOCITY 36L
-#define MODEL_BRAKE_DECEL_FOR_NEGATIVE_VELOCITY 18L
+#define MODEL_BRAKE_DECEL_FOR_NEGATIVE_VELOCITY 30L
 // 预测停车距离上限，避免异常视觉速度造成过大的反向指令，单位：0.1cm
 #define MODEL_MAX_STOP_DISTANCE_DECI_CM 240L
 // 预测制动的摆杆反向与机构响应延迟，单位：ms
@@ -122,9 +122,9 @@ typedef enum
 // 非制动的终端区摆杆目标限制，避免在目的地附近反复拉动钢球
 #define MOTOR_TERMINAL_TILT_LIMIT_PULSES 80
 // 钢球越过目标后快速拉回的最小反向倾角脉冲
-#define MOTOR_RECOVERY_TILT_PULSES 100
+#define MOTOR_RECOVERY_TILT_PULSES 60
 // 启用快速拉回的最大目标距离，单位：0.1cm
-#define MODEL_RECOVERY_ZONE_DECI_CM 25
+#define MODEL_RECOVERY_ZONE_DECI_CM 10
 #define TASK_POSITIVE_TARGET_DECI_CM    50
 #define TASK_NEGATIVE_TARGET_DECI_CM   (-50)
 #define TASK_POSITIVE_REVERSE_DECI_CM   45
