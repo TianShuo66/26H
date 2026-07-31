@@ -32,7 +32,6 @@ static volatile uint8_t debug_control_tx_busy;
 static volatile uint8_t debug_command;
 
 /* Current X readings at physical -5/0/+5cm are -4.8/0.2/5.3cm. */
-#define VISION_X_ZERO_OFFSET_DECI_CM (-102L)
 #define VISION_X_CALIBRATION_NUMERATOR 200L
 #define VISION_X_CALIBRATION_DENOMINATOR 202L
 #define VISION_X_CALIBRATION_BIAS 500L
@@ -101,7 +100,7 @@ static void Vision_ParseLine(void)
   {
     return;
   }
-  corrected_x = (int32_t)x - VISION_X_ZERO_OFFSET_DECI_CM;
+  corrected_x = (int32_t)x;
   calibration_numerator = (corrected_x * VISION_X_CALIBRATION_NUMERATOR)
                         - VISION_X_CALIBRATION_BIAS;
   if (calibration_numerator >= 0L)
