@@ -170,6 +170,9 @@ typedef struct
 #define TASK_CENTER_FINE_STATIC_PULSES  15L
 #define TASK_CENTER_FINE_STATIC_SPEED_DECI_CM_S 8L
 #define TASK_CENTER_FINE_STATIC_TRIGGER_DECI_CM 7L
+// 从中心左侧 -2cm 回归时，限制静摩擦补偿，避免在接近中心前形成大倾角。
+#define TASK_CENTER_LEFT_APPROACH_ZONE_DECI_CM 20L
+#define TASK_CENTER_LEFT_APPROACH_ADAPTIVE_LIMIT_PULSES 20L
 // 中心点闭环参数
 #define TASK_CENTER_VREF_GAIN_NUMERATOR 13L
 #define TASK_CENTER_VREF_GAIN_DIVISOR 10L
@@ -1154,6 +1157,7 @@ int main(void)
           uint8_t fast_braking;
           uint8_t use_positive_adaptive;
           uint8_t use_center_fine_control;
+          uint8_t use_center_left_approach_limit;
 
           last_control_update = now_ms;
           static_compensation_active = 0U;
@@ -1163,6 +1167,11 @@ int main(void)
               ((task_state == TASK_TO_CENTER)
                && (AbsInt32(position_error)
                    <= TASK_CENTER_FINE_ZONE_DECI_CM)) ? 1U : 0U;
+          use_center_left_approach_limit =
+              ((task_state == TASK_TO_CENTER)
+               && (position_error > 0)
+               && (position_error
+                   <= TASK_CENTER_LEFT_APPROACH_ZONE_DECI_CM)) ? 1U : 0U;
           micro_adjust_active = ((AbsInt32(position_error)
                                   <= control_parameters->micro_adjust_zone_deci_cm)
                                  || (use_center_fine_control != 0U)) ? 1U : 0U;
@@ -1186,6 +1195,14 @@ int main(void)
               (use_positive_adaptive != 0U)
                 ? TASK_POSITIVE_LAUNCH_ADAPTIVE_LIMIT_PULSES
                 : control_parameters->adaptive_tilt_limit_pulses;
+          if (use_center_left_approach_limit != 0U)
+          {
+            adaptive_tilt_limit_pulse =
+                TASK_CENTER_LEFT_APPROACH_ADAPTIVE_LIMIT_PULSES;
+            adaptive_tilt_pulse = ClampInt32(
+                adaptive_tilt_pulse, adaptive_tilt_initial_pulse,
+                adaptive_tilt_limit_pulse);
+          }
           if (use_center_fine_control != 0U)
           {
             /* Keep the final approach smooth: no accumulating static tilt. */
