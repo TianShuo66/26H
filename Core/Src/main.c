@@ -140,7 +140,10 @@ typedef enum
 #define TASK_START_POSITION_TOLERANCE_DECI_CM 15
 #define TASK_SETTLED_POSITION_TOLERANCE_DECI_CM 8
 #define TASK_SETTLED_VELOCITY_DECI_CM_S 20L
-#define TASK_SETTLED_HOLD_MS            300U
+// 进入保持前采用更严格的确认，排除仍有惯性漂移的瞬间平衡
+#define TASK_HOLD_POSITION_TOLERANCE_DECI_CM 5
+#define TASK_HOLD_VELOCITY_DECI_CM_S 5L
+#define TASK_HOLD_VERIFICATION_MS     800U
 #define TASK_MAX_DURATION_MS           5000U
 #define TASK_REVERSE_BOOST_MS            900U
 #define CALIBRATION_HOLD_MS            1000U
@@ -944,21 +947,23 @@ int main(void)
         {
           if ((AbsInt32((int32_t)ball_x_est_deci_cm
                         - target_x_deci_cm)
-               <= TASK_SETTLED_POSITION_TOLERANCE_DECI_CM)
+               <= TASK_HOLD_POSITION_TOLERANCE_DECI_CM)
               && (AbsInt32(ball_velocity_deci_cm_per_s)
-                  <= TASK_SETTLED_VELOCITY_DECI_CM_S))
+                  <= TASK_HOLD_VELOCITY_DECI_CM_S))
           {
             if (task_settled_start_ms == 0U)
             {
               task_settled_start_ms = now_ms;
             }
-            else if ((now_ms - task_settled_start_ms) >= TASK_SETTLED_HOLD_MS)
+            else if ((now_ms - task_settled_start_ms)
+                     >= TASK_HOLD_VERIFICATION_MS)
             {
               task_state = TASK_HOLD;
               motor_tilt_target_pulse = MotorPositionToPulse(
                   motor_position_counts, motor_zero_counts);
               previous_command_active = 0U;
               static_compensation_active = 0U;
+              micro_adjust_active = 0U;
               capture_braking_active = 0U;
               (void)Debug_PrintTaskEvent(TASK_EVENT_HOLD,
                                          now_ms - task_start_ms);
