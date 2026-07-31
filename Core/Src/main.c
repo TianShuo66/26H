@@ -393,6 +393,7 @@ static int32_t ApplyCaptureBrake(int32_t desired_tilt_pulse,
                                  int32_t position_error_deci_cm,
                                  int32_t velocity_deci_cm_per_s,
                                  int16_t target_x_deci_cm,
+                                 uint8_t retain_capture_brake,
                                  uint8_t *capture_braking_active,
                                  uint8_t *capture_brake_latched)
 {
@@ -409,7 +410,12 @@ static int32_t ApplyCaptureBrake(int32_t desired_tilt_pulse,
     brake_limit = MOTOR_NEGATIVE_CAPTURE_BRAKE_LIMIT_PULSES;
   }
   speed = AbsInt32(velocity_deci_cm_per_s);
-  if (*capture_brake_latched != 0U)
+  /* Only the -5cm task endpoint keeps braking after the ball crosses target. */
+  if (retain_capture_brake == 0U)
+  {
+    *capture_brake_latched = 0U;
+  }
+  else if (*capture_brake_latched != 0U)
   {
     if (speed <= BALL_CAPTURE_RELEASE_SPEED_DECI_CM_S)
     {
@@ -436,7 +442,7 @@ static int32_t ApplyCaptureBrake(int32_t desired_tilt_pulse,
                + ((speed - BALL_CAPTURE_SPEED_LIMIT_DECI_CM_S)
                   * MOTOR_CAPTURE_BRAKE_GAIN_NUMERATOR),
                brake_base, brake_limit);
-  *capture_brake_latched = 1U;
+  *capture_brake_latched = retain_capture_brake;
   *capture_braking_active = 1U;
   return (velocity_deci_cm_per_s > 0) ? brake_tilt : -brake_tilt;
 }
@@ -1015,7 +1021,9 @@ int main(void)
           }
           desired_tilt_pulse = ApplyCaptureBrake(
               desired_tilt_pulse, position_error, ball_velocity_deci_cm_per_s,
-              target_x_deci_cm, &capture_braking_active,
+              target_x_deci_cm,
+              (task_state == TASK_TO_NEGATIVE) ? 1U : 0U,
+              &capture_braking_active,
               &capture_brake_latched);
           if (capture_braking_active != 0U)
           {
