@@ -594,6 +594,10 @@ HAL_StatusTypeDef Debug_PrintTaskEvent(TaskEvent_t event,
       event_name = "COMPLETE";
       event_length = sizeof("COMPLETE") - 1U;
       break;
+    case TASK_EVENT_HOLD:
+      event_name = "HOLD";
+      event_length = sizeof("HOLD") - 1U;
+      break;
     case TASK_EVENT_TIMEOUT:
       event_name = "TIMEOUT";
       event_length = sizeof("TIMEOUT") - 1U;

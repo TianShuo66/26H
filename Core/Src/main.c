@@ -43,9 +43,10 @@ typedef enum
 typedef enum
 {
   TASK_IDLE = 0,
+  TASK_TO_CENTER,
   TASK_TO_POSITIVE,
   TASK_TO_NEGATIVE,
-  TASK_COMPLETE
+  TASK_HOLD
 } TaskState_t;
 
 /* USER CODE END PTD */
@@ -137,9 +138,9 @@ typedef enum
 #define TASK_NEGATIVE_TARGET_DECI_CM   (-50)
 #define TASK_POSITIVE_REVERSE_DECI_CM   45
 #define TASK_START_POSITION_TOLERANCE_DECI_CM 15
-#define TASK_SETTLED_POSITION_TOLERANCE_DECI_CM 5
-#define TASK_SETTLED_VELOCITY_DECI_CM_S 5L
-#define TASK_SETTLED_HOLD_MS            120U
+#define TASK_SETTLED_POSITION_TOLERANCE_DECI_CM 8
+#define TASK_SETTLED_VELOCITY_DECI_CM_S 20L
+#define TASK_SETTLED_HOLD_MS            300U
 #define TASK_MAX_DURATION_MS           5000U
 #define TASK_REVERSE_BOOST_MS            900U
 #define CALIBRATION_HOLD_MS            1000U
@@ -670,6 +671,7 @@ int main(void)
       {
         uint8_t start_requested = 0U;
         uint8_t task_start_requested = 0U;
+        uint8_t center_start_requested = 0U;
 
         last_key_action = HAL_GetTick();
         if (calibration_state != CALIBRATION_IDLE)
@@ -680,7 +682,21 @@ int main(void)
         }
         else if ((pressed_keys & 0x01U) != 0U)
         {
-          if (closed_loop_enabled != 0U)
+          if ((closed_loop_enabled != 0U)
+              && (task_state == TASK_HOLD)
+              && (target_x_deci_cm == 0))
+          {
+            target_x_deci_cm = TASK_POSITIVE_TARGET_DECI_CM;
+            task_state = TASK_TO_POSITIVE;
+            adaptive_tilt_pulse = TASK_POSITIVE_ADAPTIVE_TILT_INITIAL_PULSES;
+            last_adaptive_tilt_update_ms = now_ms;
+            task_start_ms = now_ms;
+            task_settled_start_ms = 0U;
+            task_reverse_boost_until_ms = 0U;
+            previous_command_active = 0U;
+            (void)Debug_PrintTaskEvent(TASK_EVENT_START, 0U);
+          }
+          else if (closed_loop_enabled != 0U)
           {
             StopAndDisableMotor(&motor_enabled);
             closed_loop_enabled = 0U;
@@ -696,8 +712,23 @@ int main(void)
         }
         else if ((pressed_keys & 0x02U) != 0U)
         {
-          target_x_deci_cm = 0;
-          start_requested = (closed_loop_enabled == 0U) ? 1U : 0U;
+          if (closed_loop_enabled != 0U)
+          {
+            target_x_deci_cm = 0;
+            task_state = TASK_TO_CENTER;
+            adaptive_tilt_pulse = BALL_ADAPTIVE_TILT_INITIAL_PULSES;
+            last_adaptive_tilt_update_ms = now_ms;
+            task_start_ms = now_ms;
+            task_settled_start_ms = 0U;
+            previous_command_active = 0U;
+            (void)Debug_PrintTaskEvent(TASK_EVENT_START, 0U);
+          }
+          else
+          {
+            target_x_deci_cm = 0;
+            start_requested = 1U;
+            center_start_requested = 1U;
+          }
         }
         else if ((pressed_keys & 0x04U) != 0U)
         {
@@ -764,6 +795,13 @@ int main(void)
               task_start_ms = now_ms;
               task_settled_start_ms = 0U;
               task_reverse_boost_until_ms = 0U;
+              (void)Debug_PrintTaskEvent(TASK_EVENT_START, 0U);
+            }
+            else if (center_start_requested != 0U)
+            {
+              task_state = TASK_TO_CENTER;
+              task_start_ms = now_ms;
+              task_settled_start_ms = 0U;
               (void)Debug_PrintTaskEvent(TASK_EVENT_START, 0U);
             }
             else
@@ -901,10 +939,11 @@ int main(void)
           (void)Debug_PrintTaskEvent(TASK_EVENT_REVERSE,
                                      now_ms - task_start_ms);
         }
-        else if (task_state == TASK_TO_NEGATIVE)
+        else if ((task_state == TASK_TO_CENTER)
+                 || (task_state == TASK_TO_NEGATIVE))
         {
           if ((AbsInt32((int32_t)ball_x_est_deci_cm
-                        - TASK_NEGATIVE_TARGET_DECI_CM)
+                        - target_x_deci_cm)
                <= TASK_SETTLED_POSITION_TOLERANCE_DECI_CM)
               && (AbsInt32(ball_velocity_deci_cm_per_s)
                   <= TASK_SETTLED_VELOCITY_DECI_CM_S))
@@ -915,8 +954,13 @@ int main(void)
             }
             else if ((now_ms - task_settled_start_ms) >= TASK_SETTLED_HOLD_MS)
             {
-              task_state = TASK_COMPLETE;
-              (void)Debug_PrintTaskEvent(TASK_EVENT_COMPLETE,
+              task_state = TASK_HOLD;
+              motor_tilt_target_pulse = MotorPositionToPulse(
+                  motor_position_counts, motor_zero_counts);
+              previous_command_active = 0U;
+              static_compensation_active = 0U;
+              capture_braking_active = 0U;
+              (void)Debug_PrintTaskEvent(TASK_EVENT_HOLD,
                                          now_ms - task_start_ms);
             }
           }
@@ -944,7 +988,8 @@ int main(void)
           previous_command_active = 0U;
           (void)Debug_PrintClosedLoopRejected(CLOSED_LOOP_REJECT_LOWER_LIMIT);
         }
-        else if (((now_ms - last_control_update) >= MOTOR_CONTROL_PERIOD_MS)
+        else if ((task_state != TASK_HOLD)
+                 && ((now_ms - last_control_update) >= MOTOR_CONTROL_PERIOD_MS)
                  && (motor_position_request_pending == 0U))
         {
           int32_t position_error = (int32_t)target_x_deci_cm
