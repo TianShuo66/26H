@@ -120,6 +120,8 @@ typedef enum
 #define BALL_ADAPTIVE_TILT_RELEASE_STEP_PULSES 10L
 #define BALL_ADAPTIVE_TILT_LIMIT_PULSES 70L
 #define BALL_ADAPTIVE_TILT_PERIOD_MS    120U
+// O 到 +5cm 起步时允许更大的静摩擦补偿，确保任务能在时限内起动
+#define TASK_POSITIVE_LAUNCH_ADAPTIVE_LIMIT_PULSES 120L
 // 终端稳定范围允许在目标 +/-0.8cm 内小幅摆动
 #define BALL_MICRO_ADJUST_ZONE_DECI_CM 8L
 // 提前进入终端制动区，防止带着高速跨过 +/-0.8cm 边界
@@ -129,10 +131,10 @@ typedef enum
 #define MOTOR_CAPTURE_BRAKE_BASE_PULSES 35L
 #define MOTOR_CAPTURE_BRAKE_GAIN_NUMERATOR 2L
 #define MOTOR_CAPTURE_BRAKE_LIMIT_PULSES 70L
-// -5cm 端的实测惯性更大，提前更远距离并提高制动力
+// -5cm 端的实测惯性更大，需要更早进入终端制动
 #define BALL_NEGATIVE_CAPTURE_BRAKE_ZONE_DECI_CM 35L
-#define MOTOR_NEGATIVE_CAPTURE_BRAKE_BASE_PULSES 55L
-#define MOTOR_NEGATIVE_CAPTURE_BRAKE_LIMIT_PULSES 120L
+#define MOTOR_NEGATIVE_CAPTURE_BRAKE_BASE_PULSES 35L
+#define MOTOR_NEGATIVE_CAPTURE_BRAKE_LIMIT_PULSES 70L
 #define TASK_POSITIVE_TARGET_DECI_CM    50
 #define TASK_NEGATIVE_TARGET_DECI_CM   (-50)
 #define TASK_POSITIVE_REVERSE_DECI_CM   45
@@ -964,6 +966,7 @@ int main(void)
           int32_t position_error = (int32_t)target_x_deci_cm
                                    - ball_x_est_deci_cm;
           int32_t desired_tilt_pulse;
+          int32_t adaptive_tilt_limit_pulse;
           int32_t step;
           int32_t step_limit;
           uint8_t direction;
@@ -976,6 +979,10 @@ int main(void)
                                  <= BALL_MICRO_ADJUST_ZONE_DECI_CM) ? 1U : 0U;
           desired_tilt_pulse = CalculateCascadeTilt(
               position_error, ball_velocity_deci_cm_per_s);
+          adaptive_tilt_limit_pulse =
+              (task_state == TASK_TO_POSITIVE)
+                ? TASK_POSITIVE_LAUNCH_ADAPTIVE_LIMIT_PULSES
+                : BALL_ADAPTIVE_TILT_LIMIT_PULSES;
           if (IsAdaptiveTiltNeeded(position_error,
                                    ball_velocity_deci_cm_per_s) != 0U)
           {
@@ -986,7 +993,7 @@ int main(void)
               adaptive_tilt_pulse = ClampInt32(
                   adaptive_tilt_pulse + BALL_ADAPTIVE_TILT_STEP_PULSES,
                   BALL_ADAPTIVE_TILT_INITIAL_PULSES,
-                  BALL_ADAPTIVE_TILT_LIMIT_PULSES);
+                  adaptive_tilt_limit_pulse);
             }
             desired_tilt_pulse = ApplyAdaptiveTilt(
                 desired_tilt_pulse, position_error, adaptive_tilt_pulse,
