@@ -32,7 +32,7 @@ static volatile uint8_t debug_control_tx_busy;
 static volatile uint8_t debug_command;
 
 /* Steel ball placed at mechanical O reports B,-102,y before correction. */
-#define VISION_X_ZERO_OFFSET_DECI_CM (-102L)
+#define VISION_X_ZERO_OFFSET_DEFAULT_DECI_CM (-102)
 
 volatile int16_t vision_x_deci_cm;
 volatile int16_t vision_y_deci_cm;
@@ -41,6 +41,9 @@ volatile uint8_t vision_no_detection;
 volatile uint32_t vision_last_update_ms;
 volatile uint32_t vision_frame_counter;
 volatile uint32_t vision_measurement_counter;
+static volatile int16_t vision_x_raw_deci_cm;
+static volatile int16_t vision_x_zero_offset_deci_cm =
+    VISION_X_ZERO_OFFSET_DEFAULT_DECI_CM;
 
 static uint8_t Vision_ParseInt16(uint8_t *index, int16_t *value)
 {
@@ -97,11 +100,12 @@ static void Vision_ParseLine(void)
   {
     return;
   }
-  corrected_x = (int32_t)x - VISION_X_ZERO_OFFSET_DECI_CM;
+  corrected_x = (int32_t)x - vision_x_zero_offset_deci_cm;
   if ((corrected_x < -32768L) || (corrected_x > 32767L))
   {
     return;
   }
+  vision_x_raw_deci_cm = x;
   vision_x_deci_cm = (int16_t)corrected_x;
   vision_y_deci_cm = y;
   vision_last_update_ms = HAL_GetTick();
@@ -397,6 +401,23 @@ HAL_StatusTypeDef Vision_StartReception(void)
   return HAL_UART_Receive_IT(&huart4, &uart4_rx_byte, 1U);
 }
 
+uint8_t Vision_CalibrateXZero(int16_t *raw_x_deci_cm,
+                              int16_t *offset_deci_cm)
+{
+  int16_t raw_x;
+
+  if (vision_data_valid == 0U)
+  {
+    return 0U;
+  }
+  raw_x = vision_x_raw_deci_cm;
+  vision_x_zero_offset_deci_cm = raw_x;
+  vision_x_deci_cm = 0;
+  *raw_x_deci_cm = raw_x;
+  *offset_deci_cm = raw_x;
+  return 1U;
+}
+
 HAL_StatusTypeDef Debug_StartCommandReception(void)
 {
   debug_command = 0U;
@@ -575,6 +596,43 @@ static void Debug_AppendDeciCm(uint8_t *buffer, uint8_t *length, int16_t value)
   Debug_AppendSignedInt32(buffer, length, magnitude / 10U);
   buffer[(*length)++] = '.';
   buffer[(*length)++] = (uint8_t)('0' + (magnitude % 10U));
+}
+
+HAL_StatusTypeDef Debug_PrintVisionXZero(int16_t raw_x_deci_cm,
+                                         int16_t offset_deci_cm)
+{
+  uint8_t buffer[64];
+  uint8_t length = 0U;
+
+  if (debug_control_tx_busy != 0U)
+  {
+    return HAL_BUSY;
+  }
+  memcpy(&buffer[length], "VISION,ZERO,RAW,", sizeof("VISION,ZERO,RAW,") - 1U);
+  length += sizeof("VISION,ZERO,RAW,") - 1U;
+  Debug_AppendDeciCm(buffer, &length, raw_x_deci_cm);
+  memcpy(&buffer[length], ",OFFSET,", sizeof(",OFFSET,") - 1U);
+  length += sizeof(",OFFSET,") - 1U;
+  Debug_AppendDeciCm(buffer, &length, offset_deci_cm);
+  buffer[length++] = '\r';
+  buffer[length++] = '\n';
+  return HAL_UART_Transmit(&huart1, buffer, length, 10U);
+}
+
+HAL_StatusTypeDef Debug_PrintVisionXZeroRejected(uint8_t active)
+{
+  static const char no_vision[] = "VISION,ZERO,REJECT,NO_VISION\r\n";
+  static const char task_active[] = "VISION,ZERO,REJECT,ACTIVE\r\n";
+  const char *message = (active != 0U) ? task_active : no_vision;
+  uint16_t length = (active != 0U)
+                      ? (sizeof(task_active) - 1U)
+                      : (sizeof(no_vision) - 1U);
+
+  if (debug_control_tx_busy != 0U)
+  {
+    return HAL_BUSY;
+  }
+  return HAL_UART_Transmit(&huart1, (uint8_t *)message, length, 10U);
 }
 
 HAL_StatusTypeDef Debug_PrintTaskEvent(TaskEvent_t event,
