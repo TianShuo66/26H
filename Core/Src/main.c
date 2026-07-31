@@ -130,19 +130,9 @@ typedef enum
 // +5cm 保持原有终端制动参数
 #define BALL_CAPTURE_BRAKE_ZONE_DECI_CM 20L
 #define BALL_CAPTURE_SPEED_LIMIT_DECI_CM_S 15L
-#define BALL_CAPTURE_RELEASE_SPEED_DECI_CM_S 10L
 #define MOTOR_CAPTURE_BRAKE_BASE_PULSES 35L
 #define MOTOR_CAPTURE_BRAKE_GAIN_NUMERATOR 2L
 #define MOTOR_CAPTURE_BRAKE_LIMIT_PULSES 70L
-// 0/-5cm 采用较弱的末端制动，避免在目标外侧被反向推出
-#define BALL_CENTER_CAPTURE_BRAKE_ZONE_DECI_CM 25L
-#define MOTOR_CENTER_CAPTURE_BRAKE_BASE_PULSES 15L
-#define MOTOR_CENTER_CAPTURE_BRAKE_LIMIT_PULSES 30L
-#define BALL_NEGATIVE_CAPTURE_BRAKE_ZONE_DECI_CM 15L
-#define MOTOR_NEGATIVE_CAPTURE_BRAKE_BASE_PULSES 25L
-#define MOTOR_NEGATIVE_CAPTURE_BRAKE_LIMIT_PULSES 50L
-// 0/-5cm 进入末端附近后不再累积静摩擦补偿
-#define BALL_NONPOSITIVE_DAMP_ZONE_DECI_CM 25L
 #define TASK_POSITIVE_TARGET_DECI_CM    50
 #define TASK_NEGATIVE_TARGET_DECI_CM   (-50)
 #define TASK_POSITIVE_REVERSE_DECI_CM   45
@@ -405,13 +395,10 @@ static int32_t ApplyAdaptiveTilt(int32_t desired_tilt_pulse,
   return desired_tilt_pulse;
 }
 
-static int32_t ApplyCaptureBrake(int32_t desired_tilt_pulse,
-                                 int32_t position_error_deci_cm,
-                                 int32_t velocity_deci_cm_per_s,
-                                 int16_t target_x_deci_cm,
-                                 uint8_t retain_capture_brake,
-                                 uint8_t *capture_braking_active,
-                                 uint8_t *capture_brake_latched)
+static int32_t ApplyPositiveCaptureBrake(int32_t desired_tilt_pulse,
+                                         int32_t position_error_deci_cm,
+                                         int32_t velocity_deci_cm_per_s,
+                                         uint8_t *capture_braking_active)
 {
   int32_t brake_zone = BALL_CAPTURE_BRAKE_ZONE_DECI_CM;
   int32_t brake_base = MOTOR_CAPTURE_BRAKE_BASE_PULSES;
@@ -419,41 +406,7 @@ static int32_t ApplyCaptureBrake(int32_t desired_tilt_pulse,
   int32_t speed;
   int32_t brake_tilt;
 
-  if (target_x_deci_cm == TASK_NEGATIVE_TARGET_DECI_CM)
-  {
-    brake_zone = BALL_NEGATIVE_CAPTURE_BRAKE_ZONE_DECI_CM;
-    brake_base = MOTOR_NEGATIVE_CAPTURE_BRAKE_BASE_PULSES;
-    brake_limit = MOTOR_NEGATIVE_CAPTURE_BRAKE_LIMIT_PULSES;
-  }
-  else if (target_x_deci_cm == 0)
-  {
-    brake_zone = BALL_CENTER_CAPTURE_BRAKE_ZONE_DECI_CM;
-    brake_base = MOTOR_CENTER_CAPTURE_BRAKE_BASE_PULSES;
-    brake_limit = MOTOR_CENTER_CAPTURE_BRAKE_LIMIT_PULSES;
-  }
   speed = AbsInt32(velocity_deci_cm_per_s);
-  /* Only the -5cm task endpoint keeps braking after the ball crosses target. */
-  if ((retain_capture_brake == 0U)
-      || (AbsInt32(position_error_deci_cm) > brake_zone))
-  {
-    *capture_brake_latched = 0U;
-  }
-  else if (*capture_brake_latched != 0U)
-  {
-    if (speed <= BALL_CAPTURE_RELEASE_SPEED_DECI_CM_S)
-    {
-      *capture_brake_latched = 0U;
-    }
-    else
-    {
-      brake_tilt = ClampInt32(brake_base
-                   + ((speed - BALL_CAPTURE_SPEED_LIMIT_DECI_CM_S)
-                      * MOTOR_CAPTURE_BRAKE_GAIN_NUMERATOR),
-                   brake_base, brake_limit);
-      *capture_braking_active = 1U;
-      return (velocity_deci_cm_per_s > 0) ? brake_tilt : -brake_tilt;
-    }
-  }
   if ((AbsInt32(position_error_deci_cm) > brake_zone)
       || (speed <= BALL_CAPTURE_SPEED_LIMIT_DECI_CM_S)
       || (((position_error_deci_cm > 0) && (velocity_deci_cm_per_s <= 0))
@@ -465,7 +418,6 @@ static int32_t ApplyCaptureBrake(int32_t desired_tilt_pulse,
                + ((speed - BALL_CAPTURE_SPEED_LIMIT_DECI_CM_S)
                   * MOTOR_CAPTURE_BRAKE_GAIN_NUMERATOR),
                brake_base, brake_limit);
-  *capture_brake_latched = retain_capture_brake;
   *capture_braking_active = 1U;
   return (velocity_deci_cm_per_s > 0) ? brake_tilt : -brake_tilt;
 }
@@ -536,7 +488,6 @@ int main(void)
   uint8_t static_compensation_active = 0U;
   uint8_t micro_adjust_active = 0U;
   uint8_t capture_braking_active = 0U;
-  uint8_t capture_brake_latched = 0U;
   CalibrationState_t calibration_state = CALIBRATION_IDLE;
   TaskState_t task_state = TASK_IDLE;
 
@@ -797,7 +748,6 @@ int main(void)
             static_compensation_active = 0U;
             micro_adjust_active = 0U;
             capture_braking_active = 0U;
-            capture_brake_latched = 0U;
             last_adaptive_tilt_update_ms = now_ms;
             motor_position_valid = 1U;
             last_motor_position_ms = now_ms;
@@ -1034,13 +984,6 @@ int main(void)
               (use_positive_adaptive != 0U)
                 ? TASK_POSITIVE_LAUNCH_ADAPTIVE_LIMIT_PULSES
                 : BALL_ADAPTIVE_TILT_LIMIT_PULSES;
-          if ((use_positive_adaptive == 0U)
-              && (AbsInt32(position_error)
-                  <= BALL_NONPOSITIVE_DAMP_ZONE_DECI_CM))
-          {
-            adaptive_tilt_pulse = BALL_ADAPTIVE_TILT_INITIAL_PULSES;
-            last_adaptive_tilt_update_ms = now_ms;
-          }
           if (IsAdaptiveTiltNeeded(position_error,
                                    ball_velocity_deci_cm_per_s,
                                    use_positive_adaptive) != 0U)
@@ -1068,15 +1011,15 @@ int main(void)
               adaptive_tilt_pulse -= adaptive_tilt_release_step_pulse;
             }
           }
-          desired_tilt_pulse = ApplyCaptureBrake(
-              desired_tilt_pulse, position_error, ball_velocity_deci_cm_per_s,
-              target_x_deci_cm,
-              (task_state == TASK_TO_NEGATIVE) ? 1U : 0U,
-              &capture_braking_active,
-              &capture_brake_latched);
-          if (capture_braking_active != 0U)
+          if (use_positive_adaptive != 0U)
           {
-            static_compensation_active = 0U;
+            desired_tilt_pulse = ApplyPositiveCaptureBrake(
+                desired_tilt_pulse, position_error,
+                ball_velocity_deci_cm_per_s, &capture_braking_active);
+            if (capture_braking_active != 0U)
+            {
+              static_compensation_active = 0U;
+            }
           }
           motor_tilt_target_pulse = desired_tilt_pulse;
           step = desired_tilt_pulse - motor_pulse_est;
