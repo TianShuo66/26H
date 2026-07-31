@@ -119,7 +119,11 @@ typedef enum
 #define BALL_ADAPTIVE_TILT_STEP_PULSES    5L
 #define BALL_ADAPTIVE_TILT_LIMIT_PULSES 150L
 #define BALL_ADAPTIVE_TILT_PERIOD_MS    250U
-// O 到 +5cm 起步时允许更大的静摩擦补偿，确保任务能在时限内起动
+// +5cm 目标保留原有的推进速度门限补偿策略
+#define TASK_POSITIVE_ADAPTIVE_PROGRESS_PERCENT 60L
+#define TASK_POSITIVE_ADAPTIVE_TILT_INITIAL_PULSES 35L
+#define TASK_POSITIVE_ADAPTIVE_TILT_PERIOD_MS 120U
+#define TASK_POSITIVE_ADAPTIVE_TILT_RELEASE_STEP_PULSES 10L
 #define TASK_POSITIVE_LAUNCH_ADAPTIVE_LIMIT_PULSES 120L
 // 终端稳定范围允许在目标 +/-0.8cm 内小幅摆动
 #define BALL_MICRO_ADJUST_ZONE_DECI_CM 8L
@@ -350,8 +354,26 @@ static int32_t CalculateCascadeTilt(int32_t position_error_deci_cm,
 }
 
 static uint8_t IsAdaptiveTiltNeeded(int32_t position_error_deci_cm,
-                                    int32_t velocity_deci_cm_per_s)
+                                    int32_t velocity_deci_cm_per_s,
+                                    uint8_t use_positive_adaptive)
 {
+  if (use_positive_adaptive != 0U)
+  {
+    int32_t velocity_reference = CalculateVelocityReference(
+        position_error_deci_cm);
+    int32_t progress_velocity = 0L;
+
+    if (((position_error_deci_cm > 0) && (velocity_deci_cm_per_s > 0))
+        || ((position_error_deci_cm < 0) && (velocity_deci_cm_per_s < 0)))
+    {
+      progress_velocity = AbsInt32(velocity_deci_cm_per_s);
+    }
+    return ((AbsInt32(position_error_deci_cm)
+             > BALL_MICRO_ADJUST_ZONE_DECI_CM)
+            && ((progress_velocity * 100L)
+                < (AbsInt32(velocity_reference)
+                   * TASK_POSITIVE_ADAPTIVE_PROGRESS_PERCENT))) ? 1U : 0U;
+  }
   return ((AbsInt32(position_error_deci_cm)
            > BALL_MICRO_ADJUST_ZONE_DECI_CM)
           && (AbsInt32(velocity_deci_cm_per_s)
@@ -755,7 +777,10 @@ int main(void)
             motor_zero_counts = MOTOR_FIXED_ZERO_COUNTS;
             motor_pulse_est = 0;
             motor_tilt_target_pulse = 0;
-            adaptive_tilt_pulse = BALL_ADAPTIVE_TILT_INITIAL_PULSES;
+            adaptive_tilt_pulse =
+                (target_x_deci_cm == TASK_POSITIVE_TARGET_DECI_CM)
+                  ? TASK_POSITIVE_ADAPTIVE_TILT_INITIAL_PULSES
+                  : BALL_ADAPTIVE_TILT_INITIAL_PULSES;
             fast_tilt_tracking = 0U;
             static_compensation_active = 0U;
             micro_adjust_active = 0U;
@@ -907,6 +932,8 @@ int main(void)
         {
           target_x_deci_cm = TASK_NEGATIVE_TARGET_DECI_CM;
           task_state = TASK_TO_NEGATIVE;
+          adaptive_tilt_pulse = BALL_ADAPTIVE_TILT_INITIAL_PULSES;
+          last_adaptive_tilt_update_ms = now_ms;
           task_settled_start_ms = 0U;
           task_reverse_boost_until_ms = now_ms + TASK_REVERSE_BOOST_MS;
           (void)Debug_PrintTaskEvent(TASK_EVENT_REVERSE,
@@ -961,11 +988,15 @@ int main(void)
           int32_t position_error = (int32_t)target_x_deci_cm
                                    - ball_x_est_deci_cm;
           int32_t desired_tilt_pulse;
+          int32_t adaptive_tilt_initial_pulse;
+          int32_t adaptive_tilt_release_step_pulse;
+          uint32_t adaptive_tilt_period_ms;
           int32_t adaptive_tilt_limit_pulse;
           int32_t step;
           int32_t step_limit;
           uint8_t direction;
           uint8_t fast_braking;
+          uint8_t use_positive_adaptive;
 
           last_control_update = now_ms;
           static_compensation_active = 0U;
@@ -974,20 +1005,34 @@ int main(void)
                                  <= BALL_MICRO_ADJUST_ZONE_DECI_CM) ? 1U : 0U;
           desired_tilt_pulse = CalculateCascadeTilt(
               position_error, ball_velocity_deci_cm_per_s);
+          use_positive_adaptive =
+              (target_x_deci_cm == TASK_POSITIVE_TARGET_DECI_CM) ? 1U : 0U;
+          adaptive_tilt_initial_pulse =
+              (use_positive_adaptive != 0U)
+                ? TASK_POSITIVE_ADAPTIVE_TILT_INITIAL_PULSES
+                : BALL_ADAPTIVE_TILT_INITIAL_PULSES;
+          adaptive_tilt_release_step_pulse =
+              (use_positive_adaptive != 0U)
+                ? TASK_POSITIVE_ADAPTIVE_TILT_RELEASE_STEP_PULSES
+                : BALL_ADAPTIVE_TILT_STEP_PULSES;
+          adaptive_tilt_period_ms = (use_positive_adaptive != 0U)
+                                      ? TASK_POSITIVE_ADAPTIVE_TILT_PERIOD_MS
+                                      : BALL_ADAPTIVE_TILT_PERIOD_MS;
           adaptive_tilt_limit_pulse =
-              (task_state == TASK_TO_POSITIVE)
+              (use_positive_adaptive != 0U)
                 ? TASK_POSITIVE_LAUNCH_ADAPTIVE_LIMIT_PULSES
                 : BALL_ADAPTIVE_TILT_LIMIT_PULSES;
           if (IsAdaptiveTiltNeeded(position_error,
-                                   ball_velocity_deci_cm_per_s) != 0U)
+                                   ball_velocity_deci_cm_per_s,
+                                   use_positive_adaptive) != 0U)
           {
             if ((now_ms - last_adaptive_tilt_update_ms)
-                >= BALL_ADAPTIVE_TILT_PERIOD_MS)
+                >= adaptive_tilt_period_ms)
             {
               last_adaptive_tilt_update_ms = now_ms;
               adaptive_tilt_pulse = ClampInt32(
                   adaptive_tilt_pulse + BALL_ADAPTIVE_TILT_STEP_PULSES,
-                  BALL_ADAPTIVE_TILT_INITIAL_PULSES,
+                  adaptive_tilt_initial_pulse,
                   adaptive_tilt_limit_pulse);
             }
             desired_tilt_pulse = ApplyAdaptiveTilt(
@@ -996,12 +1041,12 @@ int main(void)
           }
           else
           {
-            if ((adaptive_tilt_pulse > BALL_ADAPTIVE_TILT_INITIAL_PULSES)
+            if ((adaptive_tilt_pulse > adaptive_tilt_initial_pulse)
                 && ((now_ms - last_adaptive_tilt_update_ms)
-                    >= BALL_ADAPTIVE_TILT_PERIOD_MS))
+                    >= adaptive_tilt_period_ms))
             {
               last_adaptive_tilt_update_ms = now_ms;
-              adaptive_tilt_pulse -= BALL_ADAPTIVE_TILT_STEP_PULSES;
+              adaptive_tilt_pulse -= adaptive_tilt_release_step_pulse;
             }
           }
           desired_tilt_pulse = ApplyCaptureBrake(
