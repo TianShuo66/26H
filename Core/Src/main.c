@@ -405,7 +405,7 @@ static int32_t ApplyAdaptiveTilt(int32_t desired_tilt_pulse,
   return desired_tilt_pulse;
 }
 
-static int32_t ApplyTerminalCaptureBrake(int32_t desired_tilt_pulse,
+static int32_t ApplyPositiveCaptureBrake(int32_t desired_tilt_pulse,
                                          int32_t position_error_deci_cm,
                                          int32_t velocity_deci_cm_per_s,
                                          uint8_t *capture_braking_active)
@@ -1122,17 +1122,7 @@ int main(void)
           }
           if (use_positive_adaptive != 0U)
           {
-            desired_tilt_pulse = ApplyTerminalCaptureBrake(
-                desired_tilt_pulse, position_error,
-                ball_velocity_deci_cm_per_s, &capture_braking_active);
-            if (capture_braking_active != 0U)
-            {
-              static_compensation_active = 0U;
-            }
-          }
-          else if (task_state == TASK_TO_NEGATIVE)
-          {
-            desired_tilt_pulse = ApplyTerminalCaptureBrake(
+            desired_tilt_pulse = ApplyPositiveCaptureBrake(
                 desired_tilt_pulse, position_error,
                 ball_velocity_deci_cm_per_s, &capture_braking_active);
             if (capture_braking_active != 0U)
