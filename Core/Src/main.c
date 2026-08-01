@@ -167,7 +167,7 @@ typedef struct
 // 回中心最后 1.5cm 使用小倾角微调，避免通用起步补偿来回累积。
 #define TASK_CENTER_TARGET_DECI_CM      0
 #define TASK_CENTER_FINE_ZONE_DECI_CM   15L
-#define TASK_CENTER_FINE_TILT_LIMIT_PULSES 32L
+#define TASK_CENTER_FINE_TILT_LIMIT_PULSES 70L
 #define TASK_CENTER_FINE_STATIC_PULSES  25L
 #define TASK_NEGATIVE_FINE_STATIC_PULSES 18L
 #define TASK_NEGATIVE_FINE_TILT_LIMIT_PULSES 18L
@@ -1242,8 +1242,16 @@ int main(void)
                 : control_parameters->adaptive_tilt_limit_pulses;
           if (use_center_fine_control != 0U)
           {
-            /* Keep the final approach smooth: no accumulating static tilt. */
-            adaptive_tilt_pulse = fine_static_pulse;
+            if (task_state == TASK_TO_CENTER)
+            {
+              adaptive_tilt_pulse = ClampInt32(adaptive_tilt_pulse,
+                                                fine_static_pulse,
+                                                fine_tilt_limit_pulse);
+            }
+            else
+            {
+              adaptive_tilt_pulse = fine_static_pulse;
+            }
             desired_tilt_pulse = ClampInt32(desired_tilt_pulse,
                                    -fine_tilt_limit_pulse,
                                    fine_tilt_limit_pulse);
@@ -1252,10 +1260,29 @@ int main(void)
                 && (AbsInt32(ball_velocity_deci_cm_per_s)
                     <= fine_static_speed_deci_cm_s))
             {
+              if ((task_state == TASK_TO_CENTER)
+                  && ((now_ms - last_adaptive_tilt_update_ms)
+                      >= TASK_CENTER_ADAPTIVE_TILT_PERIOD_MS))
+              {
+                last_adaptive_tilt_update_ms = now_ms;
+                adaptive_tilt_pulse = ClampInt32(
+                    adaptive_tilt_pulse + TASK_CENTER_ADAPTIVE_TILT_STEP_PULSES,
+                    fine_static_pulse, fine_tilt_limit_pulse);
+              }
               desired_tilt_pulse = ApplyAdaptiveTilt(
                   desired_tilt_pulse, position_error,
-                  fine_static_pulse,
+                  adaptive_tilt_pulse,
                   &static_compensation_active);
+            }
+            else if ((task_state == TASK_TO_CENTER)
+                     && (adaptive_tilt_pulse > fine_static_pulse)
+                     && ((now_ms - last_adaptive_tilt_update_ms)
+                         >= TASK_CENTER_ADAPTIVE_TILT_PERIOD_MS))
+            {
+              last_adaptive_tilt_update_ms = now_ms;
+              adaptive_tilt_pulse = ClampInt32(
+                  adaptive_tilt_pulse - TASK_CENTER_ADAPTIVE_TILT_STEP_PULSES,
+                  fine_static_pulse, fine_tilt_limit_pulse);
             }
           }
           else if (IsAdaptiveTiltNeeded(position_error,
