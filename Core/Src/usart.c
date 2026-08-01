@@ -25,19 +25,11 @@
 
 static uint8_t uart4_rx_byte;
 static uint8_t usart1_rx_byte;
-static uint8_t uart5_rx_byte;
-static uint8_t uart5_rx_line[128];
-static uint8_t uart5_rx_length;
-static uint8_t uart5_line_length;
 static uint8_t vision_rx_line[24];
 static uint8_t vision_rx_length;
 static uint8_t debug_control_buffer[192];
 static volatile uint8_t debug_control_tx_busy;
 static volatile uint8_t debug_command;
-static volatile uint8_t uart5_rx_ready;
-static uint8_t uart5_task_running;
-static uint32_t uart5_task_start_ms;
-static uint32_t uart5_task_elapsed_ms;
 
 /* Raw X readings at physical -5/0/+5cm are -5.9/-0.5/4.4cm. */
 #define VISION_X_CALIBRATION_ZERO_DECI_CM 5L
@@ -132,62 +124,11 @@ static void Vision_ParseLine(void)
   vision_measurement_counter++;
 }
 
-static uint8_t UART5_LineStartsWith(const char *text)
-{
-  uint8_t index = 0U;
-
-  while (text[index] != '\0')
-  {
-    if ((index >= uart5_line_length)
-        || (uart5_rx_line[index] != (uint8_t)text[index]))
-    {
-      return 0U;
-    }
-    index++;
-  }
-  return 1U;
-}
-
-static uint8_t UART5_ParseStopElapsedMs(uint32_t *elapsed_ms)
-{
-  uint8_t index;
-  uint32_t value = 0U;
-  uint8_t has_digit = 0U;
-
-  for (index = 0U; index + 2U < uart5_line_length; index++)
-  {
-    if ((uart5_rx_line[index] == 'M') && (uart5_rx_line[index + 1U] == 'S'))
-    {
-      index += 2U;
-      while ((index < uart5_line_length) && (uart5_rx_line[index] >= '0')
-             && (uart5_rx_line[index] <= '9'))
-      {
-        if ((value > 429496729U)
-            || ((value == 429496729U) && (uart5_rx_line[index] > '5')))
-        {
-          return 0U;
-        }
-        value = value * 10U + (uint32_t)(uart5_rx_line[index] - '0');
-        has_digit = 1U;
-        index++;
-      }
-      if (has_digit != 0U)
-      {
-        *elapsed_ms = value;
-        return 1U;
-      }
-      return 0U;
-    }
-  }
-  return 0U;
-}
-
 /* USER CODE END 0 */
 
 UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart4;
 UART_HandleTypeDef huart1;
-UART_HandleTypeDef huart5;
 DMA_HandleTypeDef hdma_usart2_rx;
 DMA_HandleTypeDef hdma_usart2_tx;
 
@@ -248,22 +189,6 @@ void MX_USART1_UART_Init(void)
   huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
   huart1.Init.OverSampling = UART_OVERSAMPLING_16;
   if (HAL_UART_Init(&huart1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-}
-
-void MX_UART5_Init(void)
-{
-  huart5.Instance = UART5;
-  huart5.Init.BaudRate = 115200;
-  huart5.Init.WordLength = UART_WORDLENGTH_8B;
-  huart5.Init.StopBits = UART_STOPBITS_1;
-  huart5.Init.Parity = UART_PARITY_NONE;
-  huart5.Init.Mode = UART_MODE_TX_RX;
-  huart5.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart5.Init.OverSampling = UART_OVERSAMPLING_16;
-  if (HAL_UART_Init(&huart5) != HAL_OK)
   {
     Error_Handler();
   }
@@ -365,25 +290,6 @@ void HAL_UART_MspInit(UART_HandleTypeDef* uartHandle)
     HAL_NVIC_SetPriority(USART1_IRQn, 1, 0);
     HAL_NVIC_EnableIRQ(USART1_IRQn);
   }
-  else if(uartHandle->Instance==UART5)
-  {
-    __HAL_RCC_UART5_CLK_ENABLE();
-    __HAL_RCC_GPIOC_CLK_ENABLE();
-    __HAL_RCC_GPIOD_CLK_ENABLE();
-
-    GPIO_InitStruct.Pin = GPIO_PIN_12;
-    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-    GPIO_InitStruct.Alternate = GPIO_AF8_UART5;
-    HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
-
-    GPIO_InitStruct.Pin = GPIO_PIN_2;
-    HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
-
-    HAL_NVIC_SetPriority(UART5_IRQn, 2, 0);
-    HAL_NVIC_EnableIRQ(UART5_IRQn);
-  }
 }
 
 void HAL_UART_MspDeInit(UART_HandleTypeDef* uartHandle)
@@ -425,13 +331,6 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef* uartHandle)
     HAL_GPIO_DeInit(GPIOA, GPIO_PIN_9|GPIO_PIN_10);
     HAL_NVIC_DisableIRQ(USART1_IRQn);
   }
-  else if(uartHandle->Instance==UART5)
-  {
-    __HAL_RCC_UART5_CLK_DISABLE();
-    HAL_GPIO_DeInit(GPIOC, GPIO_PIN_12);
-    HAL_GPIO_DeInit(GPIOD, GPIO_PIN_2);
-    HAL_NVIC_DisableIRQ(UART5_IRQn);
-  }
 }
 
 /* USER CODE BEGIN 1 */
@@ -452,32 +351,6 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
       debug_command = usart1_rx_byte;
     }
     (void)HAL_UART_Receive_IT(&huart1, &usart1_rx_byte, 1U);
-    return;
-  }
-  if (huart->Instance == UART5)
-  {
-    if (uart5_rx_byte == '\n')
-    {
-      if ((uart5_rx_length > 0U) && (uart5_rx_ready == 0U))
-      {
-        uart5_rx_line[uart5_rx_length] = '\0';
-        uart5_line_length = uart5_rx_length;
-        uart5_rx_ready = 1U;
-      }
-      uart5_rx_length = 0U;
-    }
-    else if ((uart5_rx_byte != '\r') && (uart5_rx_ready == 0U))
-    {
-      if (uart5_rx_length < (sizeof(uart5_rx_line) - 1U))
-      {
-        uart5_rx_line[uart5_rx_length++] = uart5_rx_byte;
-      }
-      else
-      {
-        uart5_rx_length = 0U;
-      }
-    }
-    (void)HAL_UART_Receive_IT(&huart5, &uart5_rx_byte, 1U);
     return;
   }
   if (huart->Instance != UART4)
@@ -526,10 +399,6 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
     debug_control_tx_busy = 0U;
     (void)HAL_UART_Receive_IT(&huart1, &usart1_rx_byte, 1U);
   }
-  else if (huart->Instance == UART5)
-  {
-    (void)HAL_UART_Receive_IT(&huart5, &uart5_rx_byte, 1U);
-  }
 }
 
 HAL_StatusTypeDef Vision_StartReception(void)
@@ -545,53 +414,6 @@ HAL_StatusTypeDef Debug_StartCommandReception(void)
 {
   debug_command = 0U;
   return HAL_UART_Receive_IT(&huart1, &usart1_rx_byte, 1U);
-}
-
-HAL_StatusTypeDef UART5_StartReception(void)
-{
-  uart5_rx_length = 0U;
-  uart5_line_length = 0U;
-  uart5_rx_ready = 0U;
-  uart5_task_running = 0U;
-  uart5_task_elapsed_ms = 0U;
-  return HAL_UART_Receive_IT(&huart5, &uart5_rx_byte, 1U);
-}
-
-uint8_t UART5_ProcessReceivedLine(uint32_t now_ms)
-{
-  uint8_t time_event = 0U;
-
-  if (uart5_rx_ready == 0U)
-  {
-    return 0U;
-  }
-  if (UART5_LineStartsWith("START") != 0U)
-  {
-    uart5_task_start_ms = now_ms;
-    uart5_task_elapsed_ms = 0U;
-    uart5_task_running = 1U;
-    time_event = 1U;
-  }
-  else if (UART5_LineStartsWith("STOP") != 0U)
-  {
-    if (UART5_ParseStopElapsedMs(&uart5_task_elapsed_ms) == 0U)
-    {
-      uart5_task_elapsed_ms = now_ms - uart5_task_start_ms;
-    }
-    uart5_task_running = 0U;
-    time_event = 1U;
-  }
-  uart5_rx_ready = 0U;
-  return time_event;
-}
-
-uint32_t UART5_GetTaskElapsedMs(uint32_t now_ms)
-{
-  if (uart5_task_running != 0U)
-  {
-    return now_ms - uart5_task_start_ms;
-  }
-  return uart5_task_elapsed_ms;
 }
 
 uint8_t Debug_GetCommand(void)

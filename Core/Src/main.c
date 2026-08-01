@@ -19,8 +19,6 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "dma.h"
-#include "i2c.h"
-#include "oled.h"
 #include "usart.h"
 #include "gpio.h"
 
@@ -551,7 +549,6 @@ static uint8_t CalibrationPhaseCode(CalibrationState_t state)
 int main(void)
 {
   uint32_t last_key_action = 0U;
-  uint32_t last_oled_update = 0U;
   uint32_t last_control_update = 0U;
   uint32_t closed_loop_start_ms = 0U;
   uint32_t last_position_query = 0U;
@@ -588,7 +585,6 @@ int main(void)
   uint8_t static_compensation_active = 0U;
   uint8_t micro_adjust_active = 0U;
   uint8_t capture_braking_active = 0U;
-  uint8_t oled_ready = 0U;
   CalibrationState_t calibration_state = CALIBRATION_IDLE;
   TaskState_t task_state = TASK_IDLE;
 
@@ -615,11 +611,9 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_DMA_Init();
-  MX_I2C2_Init();
   MX_USART2_UART_Init();
   MX_UART4_Init();
   MX_USART1_UART_Init();
-  MX_UART5_Init();
   /* USER CODE BEGIN 2 */
 
   if (Vision_StartReception() != HAL_OK)
@@ -630,17 +624,6 @@ int main(void)
   {
     Error_Handler();
   }
-  if (UART5_StartReception() != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  oled_ready = (OLED_Init() == HAL_OK) ? 1U : 0U;
-  if (oled_ready != 0U)
-  {
-    (void)OLED_ShowElapsedTime(0U);
-  }
-
   previous_keys = ReadPressedKeys();
 
   /* USER CODE END 2 */
@@ -653,15 +636,6 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
     uint32_t now_ms = HAL_GetTick();
-    uint8_t uart5_time_event = UART5_ProcessReceivedLine(now_ms);
-
-    if ((oled_ready != 0U)
-        && ((uart5_time_event != 0U)
-            || ((now_ms - last_oled_update) >= 1000U)))
-    {
-      last_oled_update = now_ms;
-      (void)OLED_ShowElapsedTime(UART5_GetTaskElapsedMs(now_ms));
-    }
 
     ball_estimate_updated = UpdateBallEstimate(&last_vision_measurement_counter,
                                                &last_ball_sample_ms,
