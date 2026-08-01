@@ -99,6 +99,7 @@ typedef struct
 #define MOTOR_REVERSE_BRAKE_ACCELERATION 400U
 #define MOTOR_REVERSE_BRAKE_MAX_STEP_PULSES 24
 #define MOTOR_NEGATIVE_CAPTURE_BRAKE_MAX_STEP_PULSES 40
+#define MOTOR_CENTER_CAPTURE_BRAKE_MAX_STEP_PULSES 40
 // 摆杆目标与实际位置相差较大时，持续使用快速跟随
 #define MOTOR_FAST_TRACK_ERROR_PULSES 24
 // 软件行程限位脉冲
@@ -189,11 +190,12 @@ typedef struct
 #define TASK_CENTER_ADAPTIVE_TILT_STEP_PULSES 10L
 #define TASK_CENTER_ADAPTIVE_TILT_LIMIT_PULSES 160L
 #define TASK_CENTER_ADAPTIVE_TILT_PERIOD_MS 80U
+#define TASK_CENTER_ADAPTIVE_PROGRESS_PERCENT 35L
 #define TASK_CENTER_CAPTURE_BRAKE_ZONE_DECI_CM 20L
 #define TASK_CENTER_CAPTURE_SPEED_LIMIT_DECI_CM_S 12L
-#define TASK_CENTER_CAPTURE_BRAKE_BASE_PULSES 24L
+#define TASK_CENTER_CAPTURE_BRAKE_BASE_PULSES 30L
 #define TASK_CENTER_CAPTURE_BRAKE_GAIN_NUMERATOR 1L
-#define TASK_CENTER_CAPTURE_BRAKE_LIMIT_PULSES 45L
+#define TASK_CENTER_CAPTURE_BRAKE_LIMIT_PULSES 60L
 // -6cm 参数独立保存，避免中心点加速调参影响 KEY1 终点行为。
 #define TASK_NEGATIVE_VREF_GAIN_NUMERATOR 13L
 #define TASK_NEGATIVE_VREF_GAIN_DIVISOR 10L
@@ -496,14 +498,18 @@ static int32_t CalculateCascadeTilt(int32_t position_error_deci_cm,
 
 static uint8_t IsAdaptiveTiltNeeded(int32_t position_error_deci_cm,
                                     int32_t velocity_deci_cm_per_s,
-                                    uint8_t use_positive_adaptive,
+                                    uint8_t use_progress_adaptive,
                                     const TaskControlParameters_t *parameters)
 {
-  if (use_positive_adaptive != 0U)
+  if (use_progress_adaptive != 0U)
   {
     int32_t velocity_reference = CalculateVelocityReference(
         position_error_deci_cm, parameters);
     int32_t progress_velocity = 0L;
+    int32_t progress_percent =
+        (parameters == &task_center_control_parameters)
+          ? TASK_CENTER_ADAPTIVE_PROGRESS_PERCENT
+          : TASK_POSITIVE_ADAPTIVE_PROGRESS_PERCENT;
 
     if (((position_error_deci_cm > 0) && (velocity_deci_cm_per_s > 0))
         || ((position_error_deci_cm < 0) && (velocity_deci_cm_per_s < 0)))
@@ -514,7 +520,7 @@ static uint8_t IsAdaptiveTiltNeeded(int32_t position_error_deci_cm,
              > parameters->micro_adjust_zone_deci_cm)
             && ((progress_velocity * 100L)
                 < (AbsInt32(velocity_reference)
-                   * TASK_POSITIVE_ADAPTIVE_PROGRESS_PERCENT))) ? 1U : 0U;
+                   * progress_percent))) ? 1U : 0U;
   }
   return ((AbsInt32(position_error_deci_cm)
            > parameters->micro_adjust_zone_deci_cm)
@@ -1196,6 +1202,7 @@ int main(void)
           uint8_t direction;
           uint8_t fast_braking;
           uint8_t use_positive_adaptive;
+          uint8_t use_center_progress_adaptive;
           uint8_t use_center_fine_control;
 
           last_control_update = now_ms;
@@ -1227,6 +1234,8 @@ int main(void)
                                           : TASK_CENTER_FINE_STATIC_TRIGGER_DECI_CM;
           use_positive_adaptive =
               (target_x_deci_cm == TASK_POSITIVE_TARGET_DECI_CM) ? 1U : 0U;
+          use_center_progress_adaptive =
+              (task_state == TASK_TO_CENTER) ? 1U : 0U;
           adaptive_tilt_initial_pulse =
               (use_positive_adaptive != 0U)
                 ? TASK_POSITIVE_ADAPTIVE_TILT_INITIAL_PULSES
@@ -1289,7 +1298,8 @@ int main(void)
           }
           else if (IsAdaptiveTiltNeeded(position_error,
                                         ball_velocity_deci_cm_per_s,
-                                        use_positive_adaptive,
+                                        (uint8_t)(use_positive_adaptive
+                                                  || use_center_progress_adaptive),
                                         control_parameters) != 0U)
           {
             if ((now_ms - last_adaptive_tilt_update_ms)
@@ -1388,6 +1398,11 @@ int main(void)
                 && (capture_braking_active != 0U))
             {
               step_limit = MOTOR_NEGATIVE_CAPTURE_BRAKE_MAX_STEP_PULSES;
+            }
+            else if ((task_state == TASK_TO_CENTER)
+                     && (capture_braking_active != 0U))
+            {
+              step_limit = MOTOR_CENTER_CAPTURE_BRAKE_MAX_STEP_PULSES;
             }
             step = ClampInt32(step, -step_limit, step_limit);
             if (SendShortRelativePulse(motor_pulse_est, step,
