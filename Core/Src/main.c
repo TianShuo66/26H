@@ -98,7 +98,6 @@ typedef struct
 #define MOTOR_REVERSE_BRAKE_SPEED_RPM 2200U
 #define MOTOR_REVERSE_BRAKE_ACCELERATION 400U
 #define MOTOR_REVERSE_BRAKE_MAX_STEP_PULSES 24
-#define MOTOR_NEGATIVE_CAPTURE_BRAKE_MAX_STEP_PULSES 40
 // 摆杆目标与实际位置相差较大时，持续使用快速跟随
 #define MOTOR_FAST_TRACK_ERROR_PULSES 24
 // 软件行程限位脉冲
@@ -143,7 +142,7 @@ typedef struct
 #define BALL_ADAPTIVE_TILT_PERIOD_MS    250U
 // +5cm 目标保留原有的推进速度门限补偿策略
 #define TASK_POSITIVE_ADAPTIVE_PROGRESS_PERCENT 60L
-#define TASK_POSITIVE_ADAPTIVE_TILT_INITIAL_PULSES 35L
+#define TASK_POSITIVE_ADAPTIVE_TILT_INITIAL_PULSES 50L
 #define TASK_POSITIVE_ADAPTIVE_TILT_PERIOD_MS 120U
 #define TASK_POSITIVE_ADAPTIVE_TILT_RELEASE_STEP_PULSES 10L
 #define TASK_POSITIVE_LAUNCH_ADAPTIVE_LIMIT_PULSES 120L
@@ -156,12 +155,12 @@ typedef struct
 #define MOTOR_CAPTURE_BRAKE_GAIN_NUMERATOR 2L
 #define MOTOR_CAPTURE_BRAKE_LIMIT_PULSES 70L
 #define TASK_POSITIVE_TARGET_DECI_CM    50
-#define TASK_NEGATIVE_TARGET_DECI_CM   (-60)
-#define TASK_POSITIVE_REVERSE_DECI_CM   45
+#define TASK_NEGATIVE_TARGET_DECI_CM   (-50)
+#define TASK_POSITIVE_REVERSE_DECI_CM   40
 #define TASK_START_POSITION_TOLERANCE_DECI_CM 15
 #define TASK_SETTLED_POSITION_TOLERANCE_DECI_CM 8
 #define TASK_SETTLED_VELOCITY_DECI_CM_S 20L
-// -6cm 连续 800ms 位于目标误差内即可进入保持。
+// -5cm 连续 800ms 位于目标误差内即可进入保持。
 #define TASK_NEGATIVE_HOLD_POSITION_TOLERANCE_DECI_CM 7
 #define TASK_NEGATIVE_HOLD_VERIFICATION_MS     800U
 // 回中心最后 1.5cm 使用小倾角微调，避免通用起步补偿来回累积。
@@ -169,7 +168,6 @@ typedef struct
 #define TASK_CENTER_FINE_ZONE_DECI_CM   15L
 #define TASK_CENTER_FINE_TILT_LIMIT_PULSES 18L
 #define TASK_CENTER_FINE_STATIC_PULSES  15L
-#define TASK_NEGATIVE_FINE_STATIC_PULSES 18L
 #define TASK_CENTER_FINE_STATIC_SPEED_DECI_CM_S 8L
 #define TASK_CENTER_FINE_STATIC_TRIGGER_DECI_CM 7L
 // 中心点闭环参数
@@ -184,20 +182,11 @@ typedef struct
 #define TASK_CENTER_ADAPTIVE_TILT_STEP_PULSES 5L
 #define TASK_CENTER_ADAPTIVE_TILT_LIMIT_PULSES 150L
 #define TASK_CENTER_ADAPTIVE_TILT_PERIOD_MS 250U
-#define TASK_CENTER_CAPTURE_BRAKE_ZONE_DECI_CM 20L
+#define TASK_CENTER_CAPTURE_BRAKE_ZONE_DECI_CM 10L
 #define TASK_CENTER_CAPTURE_SPEED_LIMIT_DECI_CM_S 15L
-#define TASK_CENTER_CAPTURE_BRAKE_BASE_PULSES 35L
-#define TASK_CENTER_CAPTURE_BRAKE_GAIN_NUMERATOR 2L
-#define TASK_CENTER_CAPTURE_BRAKE_LIMIT_PULSES 70L
-#define TASK_NEGATIVE_CURVE_COMPENSATION_PULSES 35L
-#define TASK_NEGATIVE_CURVE_COMPENSATION_MIN_ERROR_DECI_CM (-40L)
-#define TASK_NEGATIVE_CURVE_COMPENSATION_MAX_ERROR_DECI_CM (-15L)
-#define TASK_NEGATIVE_CURVE_COMPENSATION_SPEED_DECI_CM_S 80L
-#define TASK_NEGATIVE_CAPTURE_BRAKE_START_ERROR_DECI_CM (-15L)
-#define TASK_NEGATIVE_CAPTURE_BRAKE_SPEED_DECI_CM_S 15L
-#define TASK_NEGATIVE_CAPTURE_BRAKE_BASE_PULSES 45L
-#define TASK_NEGATIVE_CAPTURE_BRAKE_GAIN_NUMERATOR 2L
-#define TASK_NEGATIVE_CAPTURE_BRAKE_LIMIT_PULSES 90L
+#define TASK_CENTER_CAPTURE_BRAKE_BASE_PULSES 20L
+#define TASK_CENTER_CAPTURE_BRAKE_GAIN_NUMERATOR 1L
+#define TASK_CENTER_CAPTURE_BRAKE_LIMIT_PULSES 25L
 #define TASK_MAX_DURATION_MS           10000U
 #define TASK_REVERSE_BOOST_MS            900U
 #define CALIBRATION_HOLD_MS            1000U
@@ -526,27 +515,6 @@ static int32_t ApplyTerminalCaptureBrake(int32_t desired_tilt_pulse,
                brake_base, brake_limit);
   *capture_braking_active = 1U;
   return (velocity_deci_cm_per_s > 0) ? brake_tilt : -brake_tilt;
-}
-
-static int32_t ApplyNegativeTerminalCaptureBrake(
-    int32_t desired_tilt_pulse, int32_t position_error_deci_cm,
-    int32_t velocity_deci_cm_per_s, uint8_t *capture_braking_active)
-{
-  int32_t speed = -velocity_deci_cm_per_s;
-  int32_t brake_tilt;
-
-  if ((position_error_deci_cm < TASK_NEGATIVE_CAPTURE_BRAKE_START_ERROR_DECI_CM)
-      || (velocity_deci_cm_per_s >= -TASK_NEGATIVE_CAPTURE_BRAKE_SPEED_DECI_CM_S))
-  {
-    return desired_tilt_pulse;
-  }
-  brake_tilt = ClampInt32(TASK_NEGATIVE_CAPTURE_BRAKE_BASE_PULSES
-              + ((speed - TASK_NEGATIVE_CAPTURE_BRAKE_SPEED_DECI_CM_S)
-                 * TASK_NEGATIVE_CAPTURE_BRAKE_GAIN_NUMERATOR),
-              TASK_NEGATIVE_CAPTURE_BRAKE_BASE_PULSES,
-              TASK_NEGATIVE_CAPTURE_BRAKE_LIMIT_PULSES);
-  *capture_braking_active = 1U;
-  return -brake_tilt;
 }
 
 static int32_t CalibrationTargetFromCommand(uint8_t command)
@@ -1151,6 +1119,7 @@ int main(void)
           uint8_t direction;
           uint8_t fast_braking;
           uint8_t use_positive_adaptive;
+          uint8_t use_terminal_capture;
           uint8_t use_center_fine_control;
 
           last_control_update = now_ms;
@@ -1168,11 +1137,11 @@ int main(void)
           desired_tilt_pulse = CalculateCascadeTilt(
               position_error, ball_velocity_deci_cm_per_s,
               control_parameters);
-          fine_static_pulse = (task_state == TASK_TO_NEGATIVE)
-                                ? TASK_NEGATIVE_FINE_STATIC_PULSES
-                                : TASK_CENTER_FINE_STATIC_PULSES;
+          fine_static_pulse = TASK_CENTER_FINE_STATIC_PULSES;
           use_positive_adaptive =
               (target_x_deci_cm == TASK_POSITIVE_TARGET_DECI_CM) ? 1U : 0U;
+          use_terminal_capture = ((task_state == TASK_TO_NEGATIVE)
+                                  || (use_positive_adaptive != 0U)) ? 1U : 0U;
           adaptive_tilt_initial_pulse =
               (use_positive_adaptive != 0U)
                 ? TASK_POSITIVE_ADAPTIVE_TILT_INITIAL_PULSES
@@ -1235,33 +1204,12 @@ int main(void)
               adaptive_tilt_pulse -= adaptive_tilt_release_step_pulse;
             }
           }
-          if (use_positive_adaptive != 0U)
+          if (use_terminal_capture != 0U)
           {
             desired_tilt_pulse = ApplyTerminalCaptureBrake(
                 desired_tilt_pulse, position_error,
                 ball_velocity_deci_cm_per_s, &capture_braking_active,
                 control_parameters);
-            if (capture_braking_active != 0U)
-            {
-              static_compensation_active = 0U;
-            }
-          }
-          if ((task_state == TASK_TO_NEGATIVE)
-              && (position_error >= TASK_NEGATIVE_CURVE_COMPENSATION_MIN_ERROR_DECI_CM)
-              && (position_error <= TASK_NEGATIVE_CURVE_COMPENSATION_MAX_ERROR_DECI_CM)
-              && (ball_velocity_deci_cm_per_s
-                  >= -TASK_NEGATIVE_CURVE_COMPENSATION_SPEED_DECI_CM_S))
-          {
-            desired_tilt_pulse = ClampInt32(
-                desired_tilt_pulse + TASK_NEGATIVE_CURVE_COMPENSATION_PULSES,
-                -MOTOR_TILT_TARGET_LIMIT_PULSES,
-                MOTOR_TILT_TARGET_LIMIT_PULSES);
-          }
-          if (task_state == TASK_TO_NEGATIVE)
-          {
-            desired_tilt_pulse = ApplyNegativeTerminalCaptureBrake(
-                desired_tilt_pulse, position_error,
-                ball_velocity_deci_cm_per_s, &capture_braking_active);
             if (capture_braking_active != 0U)
             {
               static_compensation_active = 0U;
@@ -1292,11 +1240,6 @@ int main(void)
             step_limit = (fast_braking != 0U)
                            ? MOTOR_REVERSE_BRAKE_MAX_STEP_PULSES
                            : MOTOR_SHORT_STEP_MAX_PULSES;
-            if ((task_state == TASK_TO_NEGATIVE)
-                && (capture_braking_active != 0U))
-            {
-              step_limit = MOTOR_NEGATIVE_CAPTURE_BRAKE_MAX_STEP_PULSES;
-            }
             step = ClampInt32(step, -step_limit, step_limit);
             if (SendShortRelativePulse(motor_pulse_est, step,
                                        fast_braking) == 0U)
