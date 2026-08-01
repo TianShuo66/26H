@@ -8,7 +8,7 @@ extern "C" {
 #include "main.h"
 
 HAL_StatusTypeDef OLED_Init(void);
-HAL_StatusTypeDef OLED_ShowUptime(uint32_t uptime_ms);
+HAL_StatusTypeDef OLED_ShowElapsedTime(uint32_t elapsed_ms);
 
 #ifdef __cplusplus
 }

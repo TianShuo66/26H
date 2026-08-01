@@ -75,7 +75,8 @@ void MX_UART5_Init(void);
 HAL_StatusTypeDef Vision_StartReception(void);
 HAL_StatusTypeDef Debug_StartCommandReception(void);
 HAL_StatusTypeDef UART5_StartReception(void);
-uint8_t UART5_GetLastReceivedByte(uint8_t *byte);
+uint8_t UART5_ProcessReceivedLine(uint32_t now_ms);
+uint32_t UART5_GetTaskElapsedMs(uint32_t now_ms);
 uint8_t Debug_GetCommand(void);
 HAL_StatusTypeDef Vision_DebugPrintLatest(void);
 HAL_StatusTypeDef Debug_PrintMotorPosition(int32_t position_counts,

@@ -638,7 +638,7 @@ int main(void)
   oled_ready = (OLED_Init() == HAL_OK) ? 1U : 0U;
   if (oled_ready != 0U)
   {
-    (void)OLED_ShowUptime(HAL_GetTick());
+    (void)OLED_ShowElapsedTime(0U);
   }
 
   previous_keys = ReadPressedKeys();
@@ -653,11 +653,14 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
     uint32_t now_ms = HAL_GetTick();
+    uint8_t uart5_time_event = UART5_ProcessReceivedLine(now_ms);
 
-    if ((oled_ready != 0U) && ((now_ms - last_oled_update) >= 1000U))
+    if ((oled_ready != 0U)
+        && ((uart5_time_event != 0U)
+            || ((now_ms - last_oled_update) >= 1000U)))
     {
       last_oled_update = now_ms;
-      (void)OLED_ShowUptime(now_ms);
+      (void)OLED_ShowElapsedTime(UART5_GetTaskElapsedMs(now_ms));
     }
 
     ball_estimate_updated = UpdateBallEstimate(&last_vision_measurement_counter,

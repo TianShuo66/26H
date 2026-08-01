@@ -131,9 +131,9 @@ HAL_StatusTypeDef OLED_Init(void)
   return HAL_OK;
 }
 
-HAL_StatusTypeDef OLED_ShowUptime(uint32_t uptime_ms)
+HAL_StatusTypeDef OLED_ShowElapsedTime(uint32_t elapsed_ms)
 {
-  uint32_t total_seconds = uptime_ms / 1000U;
+  uint32_t total_seconds = elapsed_ms / 1000U;
   uint8_t time_text[8];
   uint8_t page;
   uint8_t index;
