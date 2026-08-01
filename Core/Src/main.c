@@ -1140,8 +1140,7 @@ int main(void)
           fine_static_pulse = TASK_CENTER_FINE_STATIC_PULSES;
           use_positive_adaptive =
               (target_x_deci_cm == TASK_POSITIVE_TARGET_DECI_CM) ? 1U : 0U;
-          use_terminal_capture = ((task_state == TASK_TO_CENTER)
-                                  || (task_state == TASK_TO_NEGATIVE)
+          use_terminal_capture = ((task_state == TASK_TO_NEGATIVE)
                                   || (use_positive_adaptive != 0U)) ? 1U : 0U;
           adaptive_tilt_initial_pulse =
               (use_positive_adaptive != 0U)
