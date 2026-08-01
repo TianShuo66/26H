@@ -5,8 +5,8 @@
 
 #define OLED_I2C_ADDRESS       (0x3CU << 1)
 #define OLED_WIDTH             128U
-#define OLED_TIME_X            16U
-#define OLED_TIME_WIDTH        96U
+#define OLED_TIME_X            19U
+#define OLED_TIME_WIDTH        90U
 #define OLED_TIME_FIRST_PAGE   3U
 #define OLED_TIME_PAGE_COUNT   3U
 
@@ -76,11 +76,11 @@ static void OLED_DrawTimeCharacter(uint8_t character, uint8_t x)
       {
         continue;
       }
-      for (dx = 0U; dx < 2U; dx++)
+      for (dx = 0U; dx < 3U; dx++)
       {
         for (dy = 0U; dy < 3U; dy++)
         {
-          OLED_SetPixel((uint8_t)(x + column * 2U + dx),
+          OLED_SetPixel((uint8_t)(x + column * 3U + dx),
                         (uint8_t)(24U + row * 3U + dy));
         }
       }
@@ -134,19 +134,17 @@ HAL_StatusTypeDef OLED_Init(void)
 HAL_StatusTypeDef OLED_ShowElapsedTime(uint32_t elapsed_ms)
 {
   uint32_t total_seconds = elapsed_ms / 1000U;
-  uint8_t time_text[8];
+  uint32_t minutes;
+  uint8_t time_text[5];
   uint8_t page;
   uint8_t index;
 
-  total_seconds %= 360000U;
-  time_text[0] = (uint8_t)('0' + ((total_seconds / 36000U) % 10U));
-  time_text[1] = (uint8_t)('0' + ((total_seconds / 3600U) % 10U));
+  minutes = (total_seconds / 60U) % 100U;
+  time_text[0] = (uint8_t)('0' + (minutes / 10U));
+  time_text[1] = (uint8_t)('0' + (minutes % 10U));
   time_text[2] = ':';
-  time_text[3] = (uint8_t)('0' + ((total_seconds / 600U) % 6U));
-  time_text[4] = (uint8_t)('0' + ((total_seconds / 60U) % 10U));
-  time_text[5] = ':';
-  time_text[6] = (uint8_t)('0' + ((total_seconds / 10U) % 6U));
-  time_text[7] = (uint8_t)('0' + (total_seconds % 10U));
+  time_text[3] = (uint8_t)('0' + ((total_seconds / 10U) % 6U));
+  time_text[4] = (uint8_t)('0' + (total_seconds % 10U));
 
   for (page = 0U; page < OLED_TIME_PAGE_COUNT; page++)
   {
@@ -156,7 +154,7 @@ HAL_StatusTypeDef OLED_ShowElapsedTime(uint32_t elapsed_ms)
   for (index = 0U; index < sizeof(time_text); index++)
   {
     OLED_DrawTimeCharacter(time_text[index],
-                           (uint8_t)(OLED_TIME_X + index * 12U));
+                           (uint8_t)(OLED_TIME_X + index * 18U));
   }
   for (page = 0U; page < OLED_TIME_PAGE_COUNT; page++)
   {
