@@ -99,7 +99,6 @@ typedef struct
 #define MOTOR_REVERSE_BRAKE_ACCELERATION 400U
 #define MOTOR_REVERSE_BRAKE_MAX_STEP_PULSES 24
 #define MOTOR_NEGATIVE_CAPTURE_BRAKE_MAX_STEP_PULSES 40
-#define MOTOR_CENTER_CAPTURE_BRAKE_MAX_STEP_PULSES 40
 // 摆杆目标与实际位置相差较大时，持续使用快速跟随
 #define MOTOR_FAST_TRACK_ERROR_PULSES 24
 // 软件行程限位脉冲
@@ -160,59 +159,36 @@ typedef struct
 #define TASK_NEGATIVE_TARGET_DECI_CM   (-60)
 #define TASK_POSITIVE_REVERSE_DECI_CM   45
 #define TASK_START_POSITION_TOLERANCE_DECI_CM 15
-#define TASK_SETTLED_POSITION_TOLERANCE_DECI_CM 5
+#define TASK_SETTLED_POSITION_TOLERANCE_DECI_CM 8
 #define TASK_SETTLED_VELOCITY_DECI_CM_S 20L
 // -6cm 连续 800ms 位于目标误差内即可进入保持。
-#define TASK_NEGATIVE_HOLD_POSITION_TOLERANCE_DECI_CM 5
+#define TASK_NEGATIVE_HOLD_POSITION_TOLERANCE_DECI_CM 7
 #define TASK_NEGATIVE_HOLD_VERIFICATION_MS     800U
 // 回中心最后 1.5cm 使用小倾角微调，避免通用起步补偿来回累积。
 #define TASK_CENTER_TARGET_DECI_CM      0
 #define TASK_CENTER_FINE_ZONE_DECI_CM   15L
-#define TASK_CENTER_FINE_TILT_LIMIT_PULSES 50L
-#define TASK_CENTER_FINE_STATIC_PULSES  25L
-#define TASK_CENTER_FINE_STATIC_STEP_PULSES 5L
-#define TASK_CENTER_FINE_STATIC_PERIOD_MS 120U
+#define TASK_CENTER_FINE_TILT_LIMIT_PULSES 18L
+#define TASK_CENTER_FINE_STATIC_PULSES  15L
 #define TASK_NEGATIVE_FINE_STATIC_PULSES 18L
-#define TASK_NEGATIVE_FINE_TILT_LIMIT_PULSES 18L
-#define TASK_CENTER_FINE_STATIC_SPEED_DECI_CM_S 6L
-#define TASK_CENTER_FINE_STATIC_TRIGGER_DECI_CM 5L
-#define TASK_NEGATIVE_FINE_STATIC_SPEED_DECI_CM_S 8L
-#define TASK_NEGATIVE_FINE_STATIC_TRIGGER_DECI_CM 7L
+#define TASK_CENTER_FINE_STATIC_SPEED_DECI_CM_S 8L
+#define TASK_CENTER_FINE_STATIC_TRIGGER_DECI_CM 7L
 // 中心点闭环参数
-#define TASK_CENTER_VREF_GAIN_NUMERATOR 20L
+#define TASK_CENTER_VREF_GAIN_NUMERATOR 13L
 #define TASK_CENTER_VREF_GAIN_DIVISOR 10L
-#define TASK_CENTER_VREF_LIMIT_DECI_CM_S 120L
-#define TASK_CENTER_TILT_GAIN_NUMERATOR 65L
+#define TASK_CENTER_VREF_LIMIT_DECI_CM_S 100L
+#define TASK_CENTER_TILT_GAIN_NUMERATOR 45L
 #define TASK_CENTER_TILT_GAIN_DIVISOR 100L
 #define TASK_CENTER_MICRO_ADJUST_ZONE_DECI_CM 8L
-#define TASK_CENTER_ADAPTIVE_MOTION_DECI_CM_S 20L
-#define TASK_CENTER_ADAPTIVE_TILT_INITIAL_PULSES 25L
-#define TASK_CENTER_ADAPTIVE_TILT_STEP_PULSES 10L
-#define TASK_CENTER_ADAPTIVE_TILT_LIMIT_PULSES 160L
-#define TASK_CENTER_ADAPTIVE_TILT_PERIOD_MS 80U
-#define TASK_CENTER_ADAPTIVE_PROGRESS_PERCENT 35L
+#define TASK_CENTER_ADAPTIVE_MOTION_DECI_CM_S 15L
+#define TASK_CENTER_ADAPTIVE_TILT_INITIAL_PULSES 15L
+#define TASK_CENTER_ADAPTIVE_TILT_STEP_PULSES 5L
+#define TASK_CENTER_ADAPTIVE_TILT_LIMIT_PULSES 150L
+#define TASK_CENTER_ADAPTIVE_TILT_PERIOD_MS 250U
 #define TASK_CENTER_CAPTURE_BRAKE_ZONE_DECI_CM 20L
-#define TASK_CENTER_CAPTURE_SPEED_LIMIT_DECI_CM_S 12L
-#define TASK_CENTER_CAPTURE_BRAKE_BASE_PULSES 30L
-#define TASK_CENTER_CAPTURE_BRAKE_GAIN_NUMERATOR 1L
-#define TASK_CENTER_CAPTURE_BRAKE_LIMIT_PULSES 60L
-// -6cm 参数独立保存，避免中心点加速调参影响 KEY1 终点行为。
-#define TASK_NEGATIVE_VREF_GAIN_NUMERATOR 13L
-#define TASK_NEGATIVE_VREF_GAIN_DIVISOR 10L
-#define TASK_NEGATIVE_VREF_LIMIT_DECI_CM_S 100L
-#define TASK_NEGATIVE_TILT_GAIN_NUMERATOR 45L
-#define TASK_NEGATIVE_TILT_GAIN_DIVISOR 100L
-#define TASK_NEGATIVE_MICRO_ADJUST_ZONE_DECI_CM 8L
-#define TASK_NEGATIVE_ADAPTIVE_MOTION_DECI_CM_S 15L
-#define TASK_NEGATIVE_ADAPTIVE_TILT_INITIAL_PULSES 15L
-#define TASK_NEGATIVE_ADAPTIVE_TILT_STEP_PULSES 5L
-#define TASK_NEGATIVE_ADAPTIVE_TILT_LIMIT_PULSES 150L
-#define TASK_NEGATIVE_ADAPTIVE_TILT_PERIOD_MS 250U
-#define TASK_NEGATIVE_CAPTURE_BRAKE_ZONE_DECI_CM 20L
-#define TASK_NEGATIVE_CAPTURE_SPEED_LIMIT_DECI_CM_S 15L
-#define TASK_NEGATIVE_CAPTURE_BRAKE_BASE_PULSES 35L
-#define TASK_NEGATIVE_CAPTURE_BRAKE_GAIN_NUMERATOR 2L
-#define TASK_NEGATIVE_CAPTURE_BRAKE_LIMIT_PULSES 70L
+#define TASK_CENTER_CAPTURE_SPEED_LIMIT_DECI_CM_S 15L
+#define TASK_CENTER_CAPTURE_BRAKE_BASE_PULSES 35L
+#define TASK_CENTER_CAPTURE_BRAKE_GAIN_NUMERATOR 2L
+#define TASK_CENTER_CAPTURE_BRAKE_LIMIT_PULSES 70L
 #define TASK_NEGATIVE_CURVE_COMPENSATION_PULSES 35L
 #define TASK_NEGATIVE_CURVE_COMPENSATION_MIN_ERROR_DECI_CM (-40L)
 #define TASK_NEGATIVE_CURVE_COMPENSATION_MAX_ERROR_DECI_CM (-15L)
@@ -244,23 +220,6 @@ static const TaskControlParameters_t task_center_control_parameters =
   TASK_CENTER_CAPTURE_BRAKE_BASE_PULSES,
   TASK_CENTER_CAPTURE_BRAKE_GAIN_NUMERATOR,
   TASK_CENTER_CAPTURE_BRAKE_LIMIT_PULSES
-};
-
-static const TaskControlParameters_t task_negative_control_parameters =
-{
-  TASK_NEGATIVE_VREF_GAIN_NUMERATOR, TASK_NEGATIVE_VREF_GAIN_DIVISOR,
-  TASK_NEGATIVE_VREF_LIMIT_DECI_CM_S, TASK_NEGATIVE_TILT_GAIN_NUMERATOR,
-  TASK_NEGATIVE_TILT_GAIN_DIVISOR, TASK_NEGATIVE_MICRO_ADJUST_ZONE_DECI_CM,
-  TASK_NEGATIVE_ADAPTIVE_MOTION_DECI_CM_S,
-  TASK_NEGATIVE_ADAPTIVE_TILT_INITIAL_PULSES,
-  TASK_NEGATIVE_ADAPTIVE_TILT_STEP_PULSES,
-  TASK_NEGATIVE_ADAPTIVE_TILT_LIMIT_PULSES,
-  TASK_NEGATIVE_ADAPTIVE_TILT_PERIOD_MS,
-  TASK_NEGATIVE_CAPTURE_BRAKE_ZONE_DECI_CM,
-  TASK_NEGATIVE_CAPTURE_SPEED_LIMIT_DECI_CM_S,
-  TASK_NEGATIVE_CAPTURE_BRAKE_BASE_PULSES,
-  TASK_NEGATIVE_CAPTURE_BRAKE_GAIN_NUMERATOR,
-  TASK_NEGATIVE_CAPTURE_BRAKE_LIMIT_PULSES
 };
 
 /* +5cm keeps the previously validated values. */
@@ -334,13 +293,10 @@ static int32_t AbsInt32(int32_t value)
 static const TaskControlParameters_t *GetTaskControlParameters(
     int16_t target_x_deci_cm)
 {
-  if (target_x_deci_cm == TASK_CENTER_TARGET_DECI_CM)
+  if ((target_x_deci_cm == TASK_CENTER_TARGET_DECI_CM)
+      || (target_x_deci_cm == TASK_NEGATIVE_TARGET_DECI_CM))
   {
     return &task_center_control_parameters;
-  }
-  if (target_x_deci_cm == TASK_NEGATIVE_TARGET_DECI_CM)
-  {
-    return &task_negative_control_parameters;
   }
   return &task_positive_control_parameters;
 }
@@ -498,18 +454,14 @@ static int32_t CalculateCascadeTilt(int32_t position_error_deci_cm,
 
 static uint8_t IsAdaptiveTiltNeeded(int32_t position_error_deci_cm,
                                     int32_t velocity_deci_cm_per_s,
-                                    uint8_t use_progress_adaptive,
+                                    uint8_t use_positive_adaptive,
                                     const TaskControlParameters_t *parameters)
 {
-  if (use_progress_adaptive != 0U)
+  if (use_positive_adaptive != 0U)
   {
     int32_t velocity_reference = CalculateVelocityReference(
         position_error_deci_cm, parameters);
     int32_t progress_velocity = 0L;
-    int32_t progress_percent =
-        (parameters == &task_center_control_parameters)
-          ? TASK_CENTER_ADAPTIVE_PROGRESS_PERCENT
-          : TASK_POSITIVE_ADAPTIVE_PROGRESS_PERCENT;
 
     if (((position_error_deci_cm > 0) && (velocity_deci_cm_per_s > 0))
         || ((position_error_deci_cm < 0) && (velocity_deci_cm_per_s < 0)))
@@ -520,7 +472,7 @@ static uint8_t IsAdaptiveTiltNeeded(int32_t position_error_deci_cm,
              > parameters->micro_adjust_zone_deci_cm)
             && ((progress_velocity * 100L)
                 < (AbsInt32(velocity_reference)
-                   * progress_percent))) ? 1U : 0U;
+                   * TASK_POSITIVE_ADAPTIVE_PROGRESS_PERCENT))) ? 1U : 0U;
   }
   return ((AbsInt32(position_error_deci_cm)
            > parameters->micro_adjust_zone_deci_cm)
@@ -1117,7 +1069,7 @@ int main(void)
           target_x_deci_cm = TASK_NEGATIVE_TARGET_DECI_CM;
           task_state = TASK_TO_NEGATIVE;
           adaptive_tilt_pulse =
-              task_negative_control_parameters.adaptive_tilt_initial_pulses;
+              task_center_control_parameters.adaptive_tilt_initial_pulses;
           last_adaptive_tilt_update_ms = now_ms;
           task_settled_start_ms = 0U;
           task_hold_last_measurement_counter = last_vision_measurement_counter;
@@ -1193,16 +1145,12 @@ int main(void)
           uint32_t adaptive_tilt_period_ms;
           int32_t adaptive_tilt_limit_pulse;
           int32_t fine_static_pulse;
-          int32_t fine_tilt_limit_pulse;
-          int32_t fine_static_speed_deci_cm_s;
-          int32_t fine_static_trigger_deci_cm;
           int32_t step;
           int32_t step_limit;
           const TaskControlParameters_t *control_parameters;
           uint8_t direction;
           uint8_t fast_braking;
           uint8_t use_positive_adaptive;
-          uint8_t use_center_progress_adaptive;
           uint8_t use_center_fine_control;
 
           last_control_update = now_ms;
@@ -1223,19 +1171,8 @@ int main(void)
           fine_static_pulse = (task_state == TASK_TO_NEGATIVE)
                                 ? TASK_NEGATIVE_FINE_STATIC_PULSES
                                 : TASK_CENTER_FINE_STATIC_PULSES;
-          fine_tilt_limit_pulse = (task_state == TASK_TO_NEGATIVE)
-                                    ? TASK_NEGATIVE_FINE_TILT_LIMIT_PULSES
-                                    : TASK_CENTER_FINE_TILT_LIMIT_PULSES;
-          fine_static_speed_deci_cm_s = (task_state == TASK_TO_NEGATIVE)
-                                          ? TASK_NEGATIVE_FINE_STATIC_SPEED_DECI_CM_S
-                                          : TASK_CENTER_FINE_STATIC_SPEED_DECI_CM_S;
-          fine_static_trigger_deci_cm = (task_state == TASK_TO_NEGATIVE)
-                                          ? TASK_NEGATIVE_FINE_STATIC_TRIGGER_DECI_CM
-                                          : TASK_CENTER_FINE_STATIC_TRIGGER_DECI_CM;
           use_positive_adaptive =
               (target_x_deci_cm == TASK_POSITIVE_TARGET_DECI_CM) ? 1U : 0U;
-          use_center_progress_adaptive =
-              (task_state == TASK_TO_CENTER) ? 1U : 0U;
           adaptive_tilt_initial_pulse =
               (use_positive_adaptive != 0U)
                 ? TASK_POSITIVE_ADAPTIVE_TILT_INITIAL_PULSES
@@ -1253,53 +1190,25 @@ int main(void)
                 : control_parameters->adaptive_tilt_limit_pulses;
           if (use_center_fine_control != 0U)
           {
-            if (task_state == TASK_TO_CENTER)
-            {
-              adaptive_tilt_pulse = ClampInt32(adaptive_tilt_pulse,
-                                                fine_static_pulse,
-                                                fine_tilt_limit_pulse);
-            }
-            else
-            {
-              adaptive_tilt_pulse = fine_static_pulse;
-            }
+            /* Keep the final approach smooth: no accumulating static tilt. */
+            adaptive_tilt_pulse = fine_static_pulse;
             desired_tilt_pulse = ClampInt32(desired_tilt_pulse,
-                                   -fine_tilt_limit_pulse,
-                                   fine_tilt_limit_pulse);
+                                   -TASK_CENTER_FINE_TILT_LIMIT_PULSES,
+                                   TASK_CENTER_FINE_TILT_LIMIT_PULSES);
             if ((AbsInt32(position_error)
-                 > fine_static_trigger_deci_cm)
+                 > TASK_CENTER_FINE_STATIC_TRIGGER_DECI_CM)
                 && (AbsInt32(ball_velocity_deci_cm_per_s)
-                    <= fine_static_speed_deci_cm_s))
+                    <= TASK_CENTER_FINE_STATIC_SPEED_DECI_CM_S))
             {
-              if ((task_state == TASK_TO_CENTER)
-                  && ((now_ms - last_adaptive_tilt_update_ms)
-                      >= TASK_CENTER_FINE_STATIC_PERIOD_MS))
-              {
-                last_adaptive_tilt_update_ms = now_ms;
-                adaptive_tilt_pulse = ClampInt32(
-                    adaptive_tilt_pulse + TASK_CENTER_FINE_STATIC_STEP_PULSES,
-                    fine_static_pulse, fine_tilt_limit_pulse);
-              }
               desired_tilt_pulse = ApplyAdaptiveTilt(
                   desired_tilt_pulse, position_error,
-                  adaptive_tilt_pulse,
+                  fine_static_pulse,
                   &static_compensation_active);
-            }
-            else if ((task_state == TASK_TO_CENTER)
-                     && (adaptive_tilt_pulse > fine_static_pulse)
-                     && ((now_ms - last_adaptive_tilt_update_ms)
-                         >= TASK_CENTER_FINE_STATIC_PERIOD_MS))
-            {
-              last_adaptive_tilt_update_ms = now_ms;
-              adaptive_tilt_pulse = ClampInt32(
-                  adaptive_tilt_pulse - TASK_CENTER_FINE_STATIC_STEP_PULSES,
-                  fine_static_pulse, fine_tilt_limit_pulse);
             }
           }
           else if (IsAdaptiveTiltNeeded(position_error,
                                         ball_velocity_deci_cm_per_s,
-                                        (uint8_t)(use_positive_adaptive
-                                                  || use_center_progress_adaptive),
+                                        use_positive_adaptive,
                                         control_parameters) != 0U)
           {
             if ((now_ms - last_adaptive_tilt_update_ms)
@@ -1327,17 +1236,6 @@ int main(void)
             }
           }
           if (use_positive_adaptive != 0U)
-          {
-            desired_tilt_pulse = ApplyTerminalCaptureBrake(
-                desired_tilt_pulse, position_error,
-                ball_velocity_deci_cm_per_s, &capture_braking_active,
-                control_parameters);
-            if (capture_braking_active != 0U)
-            {
-              static_compensation_active = 0U;
-            }
-          }
-          if (task_state == TASK_TO_CENTER)
           {
             desired_tilt_pulse = ApplyTerminalCaptureBrake(
                 desired_tilt_pulse, position_error,
@@ -1398,11 +1296,6 @@ int main(void)
                 && (capture_braking_active != 0U))
             {
               step_limit = MOTOR_NEGATIVE_CAPTURE_BRAKE_MAX_STEP_PULSES;
-            }
-            else if ((task_state == TASK_TO_CENTER)
-                     && (capture_braking_active != 0U))
-            {
-              step_limit = MOTOR_CENTER_CAPTURE_BRAKE_MAX_STEP_PULSES;
             }
             step = ClampInt32(step, -step_limit, step_limit);
             if (SendShortRelativePulse(motor_pulse_est, step,
