@@ -1119,6 +1119,7 @@ int main(void)
           uint8_t direction;
           uint8_t fast_braking;
           uint8_t use_positive_adaptive;
+          uint8_t use_terminal_capture;
           uint8_t use_center_fine_control;
 
           last_control_update = now_ms;
@@ -1139,6 +1140,9 @@ int main(void)
           fine_static_pulse = TASK_CENTER_FINE_STATIC_PULSES;
           use_positive_adaptive =
               (target_x_deci_cm == TASK_POSITIVE_TARGET_DECI_CM) ? 1U : 0U;
+          use_terminal_capture = ((task_state == TASK_TO_CENTER)
+                                  || (task_state == TASK_TO_NEGATIVE)
+                                  || (use_positive_adaptive != 0U)) ? 1U : 0U;
           adaptive_tilt_initial_pulse =
               (use_positive_adaptive != 0U)
                 ? TASK_POSITIVE_ADAPTIVE_TILT_INITIAL_PULSES
@@ -1201,7 +1205,7 @@ int main(void)
               adaptive_tilt_pulse -= adaptive_tilt_release_step_pulse;
             }
           }
-          if (use_positive_adaptive != 0U)
+          if (use_terminal_capture != 0U)
           {
             desired_tilt_pulse = ApplyTerminalCaptureBrake(
                 desired_tilt_pulse, position_error,
