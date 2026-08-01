@@ -98,6 +98,7 @@ typedef struct
 #define MOTOR_REVERSE_BRAKE_SPEED_RPM 2200U
 #define MOTOR_REVERSE_BRAKE_ACCELERATION 400U
 #define MOTOR_REVERSE_BRAKE_MAX_STEP_PULSES 24
+#define MOTOR_NEGATIVE_CAPTURE_BRAKE_MAX_STEP_PULSES 40
 // 摆杆目标与实际位置相差较大时，持续使用快速跟随
 #define MOTOR_FAST_TRACK_ERROR_PULSES 24
 // 软件行程限位脉冲
@@ -190,8 +191,13 @@ typedef struct
 #define TASK_CENTER_CAPTURE_BRAKE_LIMIT_PULSES 70L
 #define TASK_NEGATIVE_CURVE_COMPENSATION_PULSES 35L
 #define TASK_NEGATIVE_CURVE_COMPENSATION_MIN_ERROR_DECI_CM (-40L)
-#define TASK_NEGATIVE_CURVE_COMPENSATION_MAX_ERROR_DECI_CM (-20L)
+#define TASK_NEGATIVE_CURVE_COMPENSATION_MAX_ERROR_DECI_CM (-15L)
 #define TASK_NEGATIVE_CURVE_COMPENSATION_SPEED_DECI_CM_S 80L
+#define TASK_NEGATIVE_CAPTURE_BRAKE_START_ERROR_DECI_CM (-15L)
+#define TASK_NEGATIVE_CAPTURE_BRAKE_SPEED_DECI_CM_S 15L
+#define TASK_NEGATIVE_CAPTURE_BRAKE_BASE_PULSES 45L
+#define TASK_NEGATIVE_CAPTURE_BRAKE_GAIN_NUMERATOR 2L
+#define TASK_NEGATIVE_CAPTURE_BRAKE_LIMIT_PULSES 90L
 #define TASK_MAX_DURATION_MS           10000U
 #define TASK_REVERSE_BOOST_MS            900U
 #define CALIBRATION_HOLD_MS            1000U
@@ -520,6 +526,27 @@ static int32_t ApplyTerminalCaptureBrake(int32_t desired_tilt_pulse,
                brake_base, brake_limit);
   *capture_braking_active = 1U;
   return (velocity_deci_cm_per_s > 0) ? brake_tilt : -brake_tilt;
+}
+
+static int32_t ApplyNegativeTerminalCaptureBrake(
+    int32_t desired_tilt_pulse, int32_t position_error_deci_cm,
+    int32_t velocity_deci_cm_per_s, uint8_t *capture_braking_active)
+{
+  int32_t speed = -velocity_deci_cm_per_s;
+  int32_t brake_tilt;
+
+  if ((position_error_deci_cm < TASK_NEGATIVE_CAPTURE_BRAKE_START_ERROR_DECI_CM)
+      || (velocity_deci_cm_per_s >= -TASK_NEGATIVE_CAPTURE_BRAKE_SPEED_DECI_CM_S))
+  {
+    return desired_tilt_pulse;
+  }
+  brake_tilt = ClampInt32(TASK_NEGATIVE_CAPTURE_BRAKE_BASE_PULSES
+              + ((speed - TASK_NEGATIVE_CAPTURE_BRAKE_SPEED_DECI_CM_S)
+                 * TASK_NEGATIVE_CAPTURE_BRAKE_GAIN_NUMERATOR),
+              TASK_NEGATIVE_CAPTURE_BRAKE_BASE_PULSES,
+              TASK_NEGATIVE_CAPTURE_BRAKE_LIMIT_PULSES);
+  *capture_braking_active = 1U;
+  return -brake_tilt;
 }
 
 static int32_t CalibrationTargetFromCommand(uint8_t command)
@@ -1230,6 +1257,16 @@ int main(void)
                 -MOTOR_TILT_TARGET_LIMIT_PULSES,
                 MOTOR_TILT_TARGET_LIMIT_PULSES);
           }
+          if (task_state == TASK_TO_NEGATIVE)
+          {
+            desired_tilt_pulse = ApplyNegativeTerminalCaptureBrake(
+                desired_tilt_pulse, position_error,
+                ball_velocity_deci_cm_per_s, &capture_braking_active);
+            if (capture_braking_active != 0U)
+            {
+              static_compensation_active = 0U;
+            }
+          }
           motor_tilt_target_pulse = desired_tilt_pulse;
           step = desired_tilt_pulse - motor_pulse_est;
           fast_tilt_tracking = (AbsInt32(step)
@@ -1243,7 +1280,8 @@ int main(void)
             direction = (step > 0) ? 0U : 1U;
             fast_braking = ((fast_tilt_tracking != 0U)
                              || ((task_state == TASK_TO_NEGATIVE)
-                                 && (now_ms < task_reverse_boost_until_ms)))
+                                 && ((now_ms < task_reverse_boost_until_ms)
+                                     || (capture_braking_active != 0U))))
                               ? 1U : 0U;
             if ((previous_command_active != 0U)
                 && (direction != previous_command_direction))
@@ -1254,6 +1292,11 @@ int main(void)
             step_limit = (fast_braking != 0U)
                            ? MOTOR_REVERSE_BRAKE_MAX_STEP_PULSES
                            : MOTOR_SHORT_STEP_MAX_PULSES;
+            if ((task_state == TASK_TO_NEGATIVE)
+                && (capture_braking_active != 0U))
+            {
+              step_limit = MOTOR_NEGATIVE_CAPTURE_BRAKE_MAX_STEP_PULSES;
+            }
             step = ClampInt32(step, -step_limit, step_limit);
             if (SendShortRelativePulse(motor_pulse_est, step,
                                        fast_braking) == 0U)
