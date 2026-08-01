@@ -159,19 +159,21 @@ typedef struct
 #define TASK_NEGATIVE_TARGET_DECI_CM   (-60)
 #define TASK_POSITIVE_REVERSE_DECI_CM   45
 #define TASK_START_POSITION_TOLERANCE_DECI_CM 15
-#define TASK_SETTLED_POSITION_TOLERANCE_DECI_CM 8
+#define TASK_SETTLED_POSITION_TOLERANCE_DECI_CM 5
 #define TASK_SETTLED_VELOCITY_DECI_CM_S 20L
 // -6cm 连续 800ms 位于目标误差内即可进入保持。
-#define TASK_NEGATIVE_HOLD_POSITION_TOLERANCE_DECI_CM 7
+#define TASK_NEGATIVE_HOLD_POSITION_TOLERANCE_DECI_CM 5
 #define TASK_NEGATIVE_HOLD_VERIFICATION_MS     800U
 // 回中心最后 1.5cm 使用小倾角微调，避免通用起步补偿来回累积。
 #define TASK_CENTER_TARGET_DECI_CM      0
 #define TASK_CENTER_FINE_ZONE_DECI_CM   15L
-#define TASK_CENTER_FINE_TILT_LIMIT_PULSES 70L
+#define TASK_CENTER_FINE_TILT_LIMIT_PULSES 50L
 #define TASK_CENTER_FINE_STATIC_PULSES  25L
+#define TASK_CENTER_FINE_STATIC_STEP_PULSES 5L
+#define TASK_CENTER_FINE_STATIC_PERIOD_MS 120U
 #define TASK_NEGATIVE_FINE_STATIC_PULSES 18L
 #define TASK_NEGATIVE_FINE_TILT_LIMIT_PULSES 18L
-#define TASK_CENTER_FINE_STATIC_SPEED_DECI_CM_S 12L
+#define TASK_CENTER_FINE_STATIC_SPEED_DECI_CM_S 6L
 #define TASK_CENTER_FINE_STATIC_TRIGGER_DECI_CM 5L
 #define TASK_NEGATIVE_FINE_STATIC_SPEED_DECI_CM_S 8L
 #define TASK_NEGATIVE_FINE_STATIC_TRIGGER_DECI_CM 7L
@@ -188,10 +190,10 @@ typedef struct
 #define TASK_CENTER_ADAPTIVE_TILT_LIMIT_PULSES 160L
 #define TASK_CENTER_ADAPTIVE_TILT_PERIOD_MS 80U
 #define TASK_CENTER_CAPTURE_BRAKE_ZONE_DECI_CM 20L
-#define TASK_CENTER_CAPTURE_SPEED_LIMIT_DECI_CM_S 15L
-#define TASK_CENTER_CAPTURE_BRAKE_BASE_PULSES 35L
-#define TASK_CENTER_CAPTURE_BRAKE_GAIN_NUMERATOR 2L
-#define TASK_CENTER_CAPTURE_BRAKE_LIMIT_PULSES 70L
+#define TASK_CENTER_CAPTURE_SPEED_LIMIT_DECI_CM_S 12L
+#define TASK_CENTER_CAPTURE_BRAKE_BASE_PULSES 24L
+#define TASK_CENTER_CAPTURE_BRAKE_GAIN_NUMERATOR 1L
+#define TASK_CENTER_CAPTURE_BRAKE_LIMIT_PULSES 45L
 // -6cm 参数独立保存，避免中心点加速调参影响 KEY1 终点行为。
 #define TASK_NEGATIVE_VREF_GAIN_NUMERATOR 13L
 #define TASK_NEGATIVE_VREF_GAIN_DIVISOR 10L
@@ -1262,11 +1264,11 @@ int main(void)
             {
               if ((task_state == TASK_TO_CENTER)
                   && ((now_ms - last_adaptive_tilt_update_ms)
-                      >= TASK_CENTER_ADAPTIVE_TILT_PERIOD_MS))
+                      >= TASK_CENTER_FINE_STATIC_PERIOD_MS))
               {
                 last_adaptive_tilt_update_ms = now_ms;
                 adaptive_tilt_pulse = ClampInt32(
-                    adaptive_tilt_pulse + TASK_CENTER_ADAPTIVE_TILT_STEP_PULSES,
+                    adaptive_tilt_pulse + TASK_CENTER_FINE_STATIC_STEP_PULSES,
                     fine_static_pulse, fine_tilt_limit_pulse);
               }
               desired_tilt_pulse = ApplyAdaptiveTilt(
@@ -1277,11 +1279,11 @@ int main(void)
             else if ((task_state == TASK_TO_CENTER)
                      && (adaptive_tilt_pulse > fine_static_pulse)
                      && ((now_ms - last_adaptive_tilt_update_ms)
-                         >= TASK_CENTER_ADAPTIVE_TILT_PERIOD_MS))
+                         >= TASK_CENTER_FINE_STATIC_PERIOD_MS))
             {
               last_adaptive_tilt_update_ms = now_ms;
               adaptive_tilt_pulse = ClampInt32(
-                  adaptive_tilt_pulse - TASK_CENTER_ADAPTIVE_TILT_STEP_PULSES,
+                  adaptive_tilt_pulse - TASK_CENTER_FINE_STATIC_STEP_PULSES,
                   fine_static_pulse, fine_tilt_limit_pulse);
             }
           }
@@ -1315,6 +1317,17 @@ int main(void)
             }
           }
           if (use_positive_adaptive != 0U)
+          {
+            desired_tilt_pulse = ApplyTerminalCaptureBrake(
+                desired_tilt_pulse, position_error,
+                ball_velocity_deci_cm_per_s, &capture_braking_active,
+                control_parameters);
+            if (capture_braking_active != 0U)
+            {
+              static_compensation_active = 0U;
+            }
+          }
+          if (task_state == TASK_TO_CENTER)
           {
             desired_tilt_pulse = ApplyTerminalCaptureBrake(
                 desired_tilt_pulse, position_error,
