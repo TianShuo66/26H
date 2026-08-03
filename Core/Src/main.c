@@ -192,6 +192,7 @@ typedef struct
 #define TASK_NEGATIVE_FINE_ZONE_DECI_CM 5L
 #define TASK_NEGATIVE_ADAPTIVE_TILT_INITIAL_PULSES 30L
 #define TASK_NEGATIVE_CAPTURE_BRAKE_ZONE_DECI_CM 5L
+#define TASK_NEGATIVE_CAPTURE_RELEASE_MS 250U
 #define TASK_MAX_DURATION_MS           10000U
 #define TASK_REVERSE_BOOST_MS            900U
 #define CALIBRATION_HOLD_MS            1000U
@@ -586,6 +587,7 @@ int main(void)
   uint32_t task_settled_start_ms = 0U;
   uint32_t task_hold_last_measurement_counter = 0U;
   uint32_t task_reverse_boost_until_ms = 0U;
+  uint32_t negative_capture_release_until_ms = 0U;
   uint32_t calibration_start_ms = 0U;
   uint32_t calibration_phase_start_ms = 0U;
   int32_t motor_position_counts = 0;
@@ -818,6 +820,7 @@ int main(void)
             task_settled_start_ms = 0U;
             task_hold_last_measurement_counter = last_vision_measurement_counter;
             task_reverse_boost_until_ms = 0U;
+            negative_capture_release_until_ms = 0U;
             previous_command_active = 0U;
             (void)Debug_PrintTaskEvent(TASK_EVENT_START, 0U);
           }
@@ -941,6 +944,7 @@ int main(void)
               task_settled_start_ms = 0U;
               task_hold_last_measurement_counter = last_vision_measurement_counter;
               task_reverse_boost_until_ms = 0U;
+              negative_capture_release_until_ms = 0U;
               (void)Debug_PrintTaskEvent(TASK_EVENT_START, 0U);
             }
             else if (center_start_requested != 0U)
@@ -1093,6 +1097,7 @@ int main(void)
           task_settled_start_ms = 0U;
           task_hold_last_measurement_counter = last_vision_measurement_counter;
           task_reverse_boost_until_ms = now_ms + TASK_REVERSE_BOOST_MS;
+          negative_capture_release_until_ms = 0U;
           (void)Debug_PrintTaskEvent(TASK_EVENT_REVERSE,
                                      now_ms - task_start_ms);
         }
@@ -1173,6 +1178,8 @@ int main(void)
           uint8_t use_positive_adaptive;
           uint8_t use_terminal_capture;
           uint8_t use_center_fine_control;
+          uint8_t negative_capture_release_active;
+          uint8_t negative_moving_away;
 
           last_control_update = now_ms;
           static_compensation_active = 0U;
@@ -1197,6 +1204,15 @@ int main(void)
               (target_x_deci_cm == TASK_POSITIVE_TARGET_DECI_CM) ? 1U : 0U;
           use_terminal_capture = ((task_state == TASK_TO_NEGATIVE)
                                   || (use_positive_adaptive != 0U)) ? 1U : 0U;
+          negative_capture_release_active =
+              ((task_state == TASK_TO_NEGATIVE)
+               && (now_ms < negative_capture_release_until_ms)) ? 1U : 0U;
+          negative_moving_away =
+              ((task_state == TASK_TO_NEGATIVE)
+               && (((position_error < 0L)
+                    && (ball_velocity_deci_cm_per_s > 0L))
+                   || ((position_error > 0L)
+                       && (ball_velocity_deci_cm_per_s < 0L)))) ? 1U : 0U;
           adaptive_tilt_initial_pulse =
               (use_positive_adaptive != 0U)
                 ? TASK_POSITIVE_ADAPTIVE_TILT_INITIAL_PULSES
@@ -1230,10 +1246,12 @@ int main(void)
                   &static_compensation_active);
             }
           }
-          else if (IsAdaptiveTiltNeeded(position_error,
-                                        ball_velocity_deci_cm_per_s,
-                                        use_positive_adaptive,
-                                        control_parameters) != 0U)
+          else if ((negative_capture_release_active == 0U)
+                   && (negative_moving_away == 0U)
+                   && (IsAdaptiveTiltNeeded(position_error,
+                                             ball_velocity_deci_cm_per_s,
+                                             use_positive_adaptive,
+                                             control_parameters) != 0U))
           {
             if ((now_ms - last_adaptive_tilt_update_ms)
                 >= adaptive_tilt_period_ms)
@@ -1268,6 +1286,11 @@ int main(void)
             if (capture_braking_active != 0U)
             {
               static_compensation_active = 0U;
+              if (task_state == TASK_TO_NEGATIVE)
+              {
+                negative_capture_release_until_ms =
+                    now_ms + TASK_NEGATIVE_CAPTURE_RELEASE_MS;
+              }
             }
           }
           motor_tilt_target_pulse = desired_tilt_pulse;
