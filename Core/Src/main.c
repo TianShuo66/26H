@@ -155,6 +155,7 @@ typedef struct
 #define MOTOR_CAPTURE_BRAKE_GAIN_NUMERATOR 2L
 #define MOTOR_CAPTURE_BRAKE_LIMIT_PULSES 70L
 #define TASK_POSITIVE_TARGET_DECI_CM    50
+#define TASK_KEY3_TARGET_DECI_CM        70
 #define TASK_NEGATIVE_TARGET_DECI_CM   (-50)
 #define TASK_POSITIVE_REVERSE_DECI_CM   40
 #define TASK_START_POSITION_TOLERANCE_DECI_CM 15
@@ -283,6 +284,7 @@ static const TaskControlParameters_t *GetTaskControlParameters(
     int16_t target_x_deci_cm)
 {
   if ((target_x_deci_cm == TASK_CENTER_TARGET_DECI_CM)
+      || (target_x_deci_cm == TASK_KEY3_TARGET_DECI_CM)
       || (target_x_deci_cm == TASK_NEGATIVE_TARGET_DECI_CM))
   {
     return &task_center_control_parameters;
@@ -769,6 +771,7 @@ int main(void)
         uint8_t start_requested = 0U;
         uint8_t task_start_requested = 0U;
         uint8_t center_start_requested = 0U;
+        uint8_t key3_start_requested = 0U;
 
         last_key_action = HAL_GetTick();
         if (calibration_state != CALIBRATION_IDLE)
@@ -832,8 +835,25 @@ int main(void)
         }
         else if ((pressed_keys & 0x04U) != 0U)
         {
-          target_x_deci_cm = TASK_POSITIVE_TARGET_DECI_CM;
-          start_requested = (closed_loop_enabled == 0U) ? 1U : 0U;
+          if (closed_loop_enabled != 0U)
+          {
+            target_x_deci_cm = TASK_KEY3_TARGET_DECI_CM;
+            task_state = TASK_TO_CENTER;
+            adaptive_tilt_pulse =
+                task_center_control_parameters.adaptive_tilt_initial_pulses;
+            last_adaptive_tilt_update_ms = now_ms;
+            task_start_ms = now_ms;
+            task_settled_start_ms = 0U;
+            task_hold_last_measurement_counter = last_vision_measurement_counter;
+            previous_command_active = 0U;
+            (void)Debug_PrintTaskEvent(TASK_EVENT_START, 0U);
+          }
+          else
+          {
+            target_x_deci_cm = TASK_KEY3_TARGET_DECI_CM;
+            start_requested = 1U;
+            key3_start_requested = 1U;
+          }
         }
         else if ((pressed_keys & 0x08U) != 0U)
         {
@@ -900,6 +920,14 @@ int main(void)
               (void)Debug_PrintTaskEvent(TASK_EVENT_START, 0U);
             }
             else if (center_start_requested != 0U)
+            {
+              task_state = TASK_TO_CENTER;
+              task_start_ms = now_ms;
+              task_settled_start_ms = 0U;
+              task_hold_last_measurement_counter = last_vision_measurement_counter;
+              (void)Debug_PrintTaskEvent(TASK_EVENT_START, 0U);
+            }
+            else if (key3_start_requested != 0U)
             {
               task_state = TASK_TO_CENTER;
               task_start_ms = now_ms;
