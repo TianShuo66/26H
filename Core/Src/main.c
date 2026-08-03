@@ -188,6 +188,10 @@ typedef struct
 #define TASK_CENTER_CAPTURE_BRAKE_BASE_PULSES 20L
 #define TASK_CENTER_CAPTURE_BRAKE_GAIN_NUMERATOR 1L
 #define TASK_CENTER_CAPTURE_BRAKE_LIMIT_PULSES 25L
+/* Negative target: delay capture until the final 0.5cm, then overcome friction. */
+#define TASK_NEGATIVE_FINE_ZONE_DECI_CM 5L
+#define TASK_NEGATIVE_ADAPTIVE_TILT_INITIAL_PULSES 30L
+#define TASK_NEGATIVE_CAPTURE_BRAKE_ZONE_DECI_CM 5L
 #define TASK_MAX_DURATION_MS           10000U
 #define TASK_REVERSE_BOOST_MS            900U
 #define CALIBRATION_HOLD_MS            1000U
@@ -206,6 +210,23 @@ static const TaskControlParameters_t task_center_control_parameters =
   TASK_CENTER_ADAPTIVE_TILT_LIMIT_PULSES,
   TASK_CENTER_ADAPTIVE_TILT_PERIOD_MS,
   TASK_CENTER_CAPTURE_BRAKE_ZONE_DECI_CM,
+  TASK_CENTER_CAPTURE_SPEED_LIMIT_DECI_CM_S,
+  TASK_CENTER_CAPTURE_BRAKE_BASE_PULSES,
+  TASK_CENTER_CAPTURE_BRAKE_GAIN_NUMERATOR,
+  TASK_CENTER_CAPTURE_BRAKE_LIMIT_PULSES
+};
+
+static const TaskControlParameters_t task_negative_control_parameters =
+{
+  TASK_CENTER_VREF_GAIN_NUMERATOR, TASK_CENTER_VREF_GAIN_DIVISOR,
+  TASK_CENTER_VREF_LIMIT_DECI_CM_S, TASK_CENTER_TILT_GAIN_NUMERATOR,
+  TASK_CENTER_TILT_GAIN_DIVISOR, TASK_CENTER_MICRO_ADJUST_ZONE_DECI_CM,
+  TASK_CENTER_ADAPTIVE_MOTION_DECI_CM_S,
+  TASK_NEGATIVE_ADAPTIVE_TILT_INITIAL_PULSES,
+  TASK_CENTER_ADAPTIVE_TILT_STEP_PULSES,
+  TASK_CENTER_ADAPTIVE_TILT_LIMIT_PULSES,
+  TASK_CENTER_ADAPTIVE_TILT_PERIOD_MS,
+  TASK_NEGATIVE_CAPTURE_BRAKE_ZONE_DECI_CM,
   TASK_CENTER_CAPTURE_SPEED_LIMIT_DECI_CM_S,
   TASK_CENTER_CAPTURE_BRAKE_BASE_PULSES,
   TASK_CENTER_CAPTURE_BRAKE_GAIN_NUMERATOR,
@@ -283,9 +304,12 @@ static int32_t AbsInt32(int32_t value)
 static const TaskControlParameters_t *GetTaskControlParameters(
     int16_t target_x_deci_cm)
 {
+  if (target_x_deci_cm == TASK_NEGATIVE_TARGET_DECI_CM)
+  {
+    return &task_negative_control_parameters;
+  }
   if ((target_x_deci_cm == TASK_CENTER_TARGET_DECI_CM)
-      || (target_x_deci_cm == TASK_KEY3_TARGET_DECI_CM)
-      || (target_x_deci_cm == TASK_NEGATIVE_TARGET_DECI_CM))
+      || (target_x_deci_cm == TASK_KEY3_TARGET_DECI_CM))
   {
     return &task_center_control_parameters;
   }
@@ -1064,7 +1088,7 @@ int main(void)
           target_x_deci_cm = TASK_NEGATIVE_TARGET_DECI_CM;
           task_state = TASK_TO_NEGATIVE;
           adaptive_tilt_pulse =
-              task_center_control_parameters.adaptive_tilt_initial_pulses;
+              task_negative_control_parameters.adaptive_tilt_initial_pulses;
           last_adaptive_tilt_update_ms = now_ms;
           task_settled_start_ms = 0U;
           task_hold_last_measurement_counter = last_vision_measurement_counter;
@@ -1140,6 +1164,7 @@ int main(void)
           uint32_t adaptive_tilt_period_ms;
           int32_t adaptive_tilt_limit_pulse;
           int32_t fine_static_pulse;
+          int32_t fine_zone_deci_cm;
           int32_t step;
           int32_t step_limit;
           const TaskControlParameters_t *control_parameters;
@@ -1153,11 +1178,14 @@ int main(void)
           static_compensation_active = 0U;
           capture_braking_active = 0U;
           control_parameters = GetTaskControlParameters(target_x_deci_cm);
+          fine_zone_deci_cm = (task_state == TASK_TO_NEGATIVE)
+                                ? TASK_NEGATIVE_FINE_ZONE_DECI_CM
+                                : TASK_CENTER_FINE_ZONE_DECI_CM;
           use_center_fine_control =
               (((task_state == TASK_TO_CENTER)
                 || (task_state == TASK_TO_NEGATIVE))
                && (AbsInt32(position_error)
-                   <= TASK_CENTER_FINE_ZONE_DECI_CM)) ? 1U : 0U;
+                   <= fine_zone_deci_cm)) ? 1U : 0U;
           micro_adjust_active = ((AbsInt32(position_error)
                                   <= control_parameters->micro_adjust_zone_deci_cm)
                                  || (use_center_fine_control != 0U)) ? 1U : 0U;
