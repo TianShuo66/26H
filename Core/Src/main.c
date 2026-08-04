@@ -190,6 +190,18 @@ typedef struct
 #define TASK_CENTER_CAPTURE_BRAKE_BASE_PULSES 20L
 #define TASK_CENTER_CAPTURE_BRAKE_GAIN_NUMERATOR 1L
 #define TASK_CENTER_CAPTURE_BRAKE_LIMIT_PULSES 25L
+/* KEY3 follows the center cascade structure but needs more drive to reach +7cm. */
+#define TASK_KEY3_VREF_GAIN_NUMERATOR 16L
+#define TASK_KEY3_VREF_GAIN_DIVISOR 10L
+#define TASK_KEY3_VREF_LIMIT_DECI_CM_S 100L
+#define TASK_KEY3_TILT_GAIN_NUMERATOR 55L
+#define TASK_KEY3_TILT_GAIN_DIVISOR 100L
+#define TASK_KEY3_MICRO_ADJUST_ZONE_DECI_CM 5L
+#define TASK_KEY3_ADAPTIVE_MOTION_DECI_CM_S 25L
+#define TASK_KEY3_ADAPTIVE_TILT_INITIAL_PULSES 35L
+#define TASK_KEY3_ADAPTIVE_TILT_STEP_PULSES 5L
+#define TASK_KEY3_ADAPTIVE_TILT_LIMIT_PULSES 155L
+#define TASK_KEY3_ADAPTIVE_TILT_PERIOD_MS 150U
 /* Negative target: brake before the final approach, then overcome friction. */
 #define TASK_NEGATIVE_FINE_ZONE_DECI_CM 15L
 #define TASK_NEGATIVE_FINE_STATIC_PULSES 50L
@@ -242,6 +254,24 @@ static const TaskControlParameters_t task_negative_control_parameters =
   TASK_NEGATIVE_CAPTURE_BRAKE_BASE_PULSES,
   TASK_NEGATIVE_CAPTURE_BRAKE_GAIN_NUMERATOR,
   TASK_NEGATIVE_CAPTURE_BRAKE_LIMIT_PULSES
+};
+
+/* KEY3 has its own gains but uses the same cascade and adaptive logic as center. */
+static const TaskControlParameters_t task_key3_control_parameters =
+{
+  TASK_KEY3_VREF_GAIN_NUMERATOR, TASK_KEY3_VREF_GAIN_DIVISOR,
+  TASK_KEY3_VREF_LIMIT_DECI_CM_S, TASK_KEY3_TILT_GAIN_NUMERATOR,
+  TASK_KEY3_TILT_GAIN_DIVISOR, TASK_KEY3_MICRO_ADJUST_ZONE_DECI_CM,
+  TASK_KEY3_ADAPTIVE_MOTION_DECI_CM_S,
+  TASK_KEY3_ADAPTIVE_TILT_INITIAL_PULSES,
+  TASK_KEY3_ADAPTIVE_TILT_STEP_PULSES,
+  TASK_KEY3_ADAPTIVE_TILT_LIMIT_PULSES,
+  TASK_KEY3_ADAPTIVE_TILT_PERIOD_MS,
+  TASK_CENTER_CAPTURE_BRAKE_ZONE_DECI_CM,
+  TASK_CENTER_CAPTURE_SPEED_LIMIT_DECI_CM_S,
+  TASK_CENTER_CAPTURE_BRAKE_BASE_PULSES,
+  TASK_CENTER_CAPTURE_BRAKE_GAIN_NUMERATOR,
+  TASK_CENTER_CAPTURE_BRAKE_LIMIT_PULSES
 };
 
 /* +5cm keeps the previously validated values. */
@@ -319,8 +349,11 @@ static const TaskControlParameters_t *GetTaskControlParameters(
   {
     return &task_negative_control_parameters;
   }
-  if ((target_x_deci_cm == TASK_CENTER_TARGET_DECI_CM)
-      || (target_x_deci_cm == TASK_KEY3_TARGET_DECI_CM))
+  if (target_x_deci_cm == TASK_KEY3_TARGET_DECI_CM)
+  {
+    return &task_key3_control_parameters;
+  }
+  if (target_x_deci_cm == TASK_CENTER_TARGET_DECI_CM)
   {
     return &task_center_control_parameters;
   }
@@ -1011,7 +1044,7 @@ int main(void)
             task_state = TASK_TO_CENTER;
             center_fine_control_active = 0U;
             adaptive_tilt_pulse =
-                task_center_control_parameters.adaptive_tilt_initial_pulses;
+                task_key3_control_parameters.adaptive_tilt_initial_pulses;
             last_adaptive_tilt_update_ms = now_ms;
             task_start_ms = now_ms;
             task_settled_start_ms = 0U;
