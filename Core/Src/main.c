@@ -190,9 +190,11 @@ typedef struct
 #define TASK_CENTER_CAPTURE_BRAKE_GAIN_NUMERATOR 1L
 #define TASK_CENTER_CAPTURE_BRAKE_LIMIT_PULSES 25L
 /* Negative target: brake before the final approach, then overcome friction. */
-#define TASK_NEGATIVE_FINE_ZONE_DECI_CM 5L
+#define TASK_NEGATIVE_FINE_ZONE_DECI_CM 15L
+#define TASK_NEGATIVE_FINE_STATIC_PULSES 30L
 #define TASK_NEGATIVE_ADAPTIVE_TILT_INITIAL_PULSES 30L
-#define TASK_NEGATIVE_CAPTURE_BRAKE_ZONE_DECI_CM 15L
+/* Start the final brake at -4.0cm instead of prematurely at -3.5cm. */
+#define TASK_NEGATIVE_CAPTURE_BRAKE_ZONE_DECI_CM 10L
 #define TASK_NEGATIVE_CAPTURE_BRAKE_BASE_PULSES 35L
 #define TASK_NEGATIVE_CAPTURE_BRAKE_GAIN_NUMERATOR 2L
 #define TASK_NEGATIVE_CAPTURE_BRAKE_LIMIT_PULSES 54L
@@ -200,7 +202,7 @@ typedef struct
 #define TASK_NEGATIVE_CAPTURE_SPEED_LIMIT_DECI_CM_S 40L
 #define TASK_NEGATIVE_CAPTURE_RELEASE_MS 250U
 #define BALANCE_DEBUG_STEP_PULSES 5L
-#define TASK_MAX_DURATION_MS           10000U
+#define TASK_MAX_DURATION_MS            5000U
 #define TASK_REVERSE_BOOST_MS            900U
 #define CALIBRATION_HOLD_MS            1000U
 #define CALIBRATION_MOVE_TIMEOUT_MS    1500U
@@ -1323,6 +1325,10 @@ int main(void)
               position_error, ball_velocity_deci_cm_per_s,
               control_parameters);
           fine_static_pulse = TASK_CENTER_FINE_STATIC_PULSES;
+          if (task_state == TASK_TO_NEGATIVE)
+          {
+            fine_static_pulse = TASK_NEGATIVE_FINE_STATIC_PULSES;
+          }
           use_positive_adaptive =
               (target_x_deci_cm == TASK_POSITIVE_TARGET_DECI_CM) ? 1U : 0U;
           use_terminal_capture = ((task_state == TASK_TO_NEGATIVE)
