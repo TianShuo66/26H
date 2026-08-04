@@ -170,6 +170,7 @@ typedef struct
 #define TASK_CENTER_FINE_EXIT_ZONE_DECI_CM  15L
 #define TASK_CENTER_FINE_TILT_LIMIT_PULSES 18L
 #define TASK_CENTER_FINE_STATIC_PULSES  15L
+#define TASK_CENTER_FINE_ENTRY_SPEED_DECI_CM_S 30L
 #define TASK_CENTER_FINE_STATIC_SPEED_DECI_CM_S 8L
 #define TASK_CENTER_FINE_STATIC_TRIGGER_DECI_CM 7L
 // 中心点闭环参数
@@ -1335,13 +1336,17 @@ int main(void)
           {
             if ((center_fine_control_active == 0U)
                 && (AbsInt32(position_error)
-                    <= TASK_CENTER_FINE_ENTER_ZONE_DECI_CM))
+                    <= TASK_CENTER_FINE_ENTER_ZONE_DECI_CM)
+                && (AbsInt32(ball_velocity_deci_cm_per_s)
+                    <= TASK_CENTER_FINE_ENTRY_SPEED_DECI_CM_S))
             {
               center_fine_control_active = 1U;
             }
             else if ((center_fine_control_active != 0U)
-                     && (AbsInt32(position_error)
-                         > TASK_CENTER_FINE_EXIT_ZONE_DECI_CM))
+                     && ((AbsInt32(position_error)
+                          > TASK_CENTER_FINE_EXIT_ZONE_DECI_CM)
+                         || (AbsInt32(ball_velocity_deci_cm_per_s)
+                             > TASK_CENTER_FINE_ENTRY_SPEED_DECI_CM_S)))
             {
               center_fine_control_active = 0U;
             }
