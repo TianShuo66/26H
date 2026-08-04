@@ -1327,6 +1327,8 @@ int main(void)
                && (now_ms < negative_capture_release_until_ms)) ? 1U : 0U;
           negative_moving_away =
               ((task_state == TASK_TO_NEGATIVE)
+               && (AbsInt32(position_error)
+                   <= TASK_NEGATIVE_FINE_ZONE_DECI_CM)
                && (((position_error < 0L)
                     && (ball_velocity_deci_cm_per_s > 0L))
                    || ((position_error > 0L)
@@ -1364,6 +1366,8 @@ int main(void)
                   &static_compensation_active);
             }
           }
+          /* After a negative-target capture rebounds outside the final zone,
+             static friction must be overcome again to prevent a -3cm stall. */
           else if ((negative_capture_release_active == 0U)
                    && (negative_moving_away == 0U)
                    && (IsAdaptiveTiltNeeded(position_error,
