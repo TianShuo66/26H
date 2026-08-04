@@ -1011,7 +1011,11 @@ int main(void)
             /* Always use the calibrated mechanical zero, never the start position. */
             EnableMotor(&motor_enabled);
             motor_zero_counts = mechanical_zero_counts;
-            motor_pulse_est = 0;
+            /* The motor may still be tilted when a task is started.  Keep the
+               feedback-derived state so the first relative command is based on
+               the real rod angle instead of an assumed horizontal position. */
+            motor_pulse_est = MotorPositionToPulse(motor_position_counts,
+                                                    motor_zero_counts);
             motor_tilt_target_pulse = 0;
             adaptive_tilt_pulse =
                 (target_x_deci_cm == TASK_POSITIVE_TARGET_DECI_CM)
