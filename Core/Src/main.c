@@ -166,7 +166,8 @@ typedef struct
 #define TASK_NEGATIVE_HOLD_VERIFICATION_MS     800U
 // 回中心最后 1.5cm 使用小倾角微调，避免通用起步补偿来回累积。
 #define TASK_CENTER_TARGET_DECI_CM      0
-#define TASK_CENTER_FINE_ZONE_DECI_CM   15L
+#define TASK_CENTER_FINE_ENTER_ZONE_DECI_CM 10L
+#define TASK_CENTER_FINE_EXIT_ZONE_DECI_CM  15L
 #define TASK_CENTER_FINE_TILT_LIMIT_PULSES 18L
 #define TASK_CENTER_FINE_STATIC_PULSES  15L
 #define TASK_CENTER_FINE_STATIC_SPEED_DECI_CM_S 8L
@@ -616,6 +617,7 @@ int main(void)
   uint8_t micro_adjust_active = 0U;
   uint8_t capture_braking_active = 0U;
   uint8_t balance_debug_active = 0U;
+  uint8_t center_fine_control_active = 0U;
   CalibrationState_t calibration_state = CALIBRATION_IDLE;
   TaskState_t task_state = TASK_IDLE;
 
@@ -910,6 +912,7 @@ int main(void)
           {
             target_x_deci_cm = TASK_POSITIVE_TARGET_DECI_CM;
             task_state = TASK_TO_POSITIVE;
+            center_fine_control_active = 0U;
             adaptive_tilt_pulse = TASK_POSITIVE_ADAPTIVE_TILT_INITIAL_PULSES;
             last_adaptive_tilt_update_ms = now_ms;
             task_start_ms = now_ms;
@@ -940,6 +943,7 @@ int main(void)
           {
             target_x_deci_cm = TASK_CENTER_TARGET_DECI_CM;
             task_state = TASK_TO_CENTER;
+            center_fine_control_active = 0U;
             adaptive_tilt_pulse =
                 task_center_control_parameters.adaptive_tilt_initial_pulses;
             last_adaptive_tilt_update_ms = now_ms;
@@ -962,6 +966,7 @@ int main(void)
           {
             target_x_deci_cm = TASK_KEY3_TARGET_DECI_CM;
             task_state = TASK_TO_CENTER;
+            center_fine_control_active = 0U;
             adaptive_tilt_pulse =
                 task_center_control_parameters.adaptive_tilt_initial_pulses;
             last_adaptive_tilt_update_ms = now_ms;
@@ -1030,6 +1035,7 @@ int main(void)
             if (task_start_requested != 0U)
             {
               task_state = TASK_TO_POSITIVE;
+              center_fine_control_active = 0U;
               task_start_ms = now_ms;
               task_settled_start_ms = 0U;
               task_hold_last_measurement_counter = last_vision_measurement_counter;
@@ -1040,6 +1046,7 @@ int main(void)
             else if (center_start_requested != 0U)
             {
               task_state = TASK_TO_CENTER;
+              center_fine_control_active = 0U;
               task_start_ms = now_ms;
               task_settled_start_ms = 0U;
               task_hold_last_measurement_counter = last_vision_measurement_counter;
@@ -1048,6 +1055,7 @@ int main(void)
             else if (key3_start_requested != 0U)
             {
               task_state = TASK_TO_CENTER;
+              center_fine_control_active = 0U;
               task_start_ms = now_ms;
               task_settled_start_ms = 0U;
               task_hold_last_measurement_counter = last_vision_measurement_counter;
@@ -1181,6 +1189,7 @@ int main(void)
         {
           target_x_deci_cm = TASK_NEGATIVE_TARGET_DECI_CM;
           task_state = TASK_TO_NEGATIVE;
+          center_fine_control_active = 0U;
           adaptive_tilt_pulse =
               task_negative_control_parameters.adaptive_tilt_initial_pulses;
           last_adaptive_tilt_update_ms = now_ms;
@@ -1259,7 +1268,6 @@ int main(void)
           uint32_t adaptive_tilt_period_ms;
           int32_t adaptive_tilt_limit_pulse;
           int32_t fine_static_pulse;
-          int32_t fine_zone_deci_cm;
           int32_t step;
           int32_t step_limit;
           const TaskControlParameters_t *control_parameters;
@@ -1275,14 +1283,30 @@ int main(void)
           static_compensation_active = 0U;
           capture_braking_active = 0U;
           control_parameters = GetTaskControlParameters(target_x_deci_cm);
-          fine_zone_deci_cm = (task_state == TASK_TO_NEGATIVE)
-                                ? TASK_NEGATIVE_FINE_ZONE_DECI_CM
-                                : TASK_CENTER_FINE_ZONE_DECI_CM;
-          use_center_fine_control =
-              (((task_state == TASK_TO_CENTER)
-                || (task_state == TASK_TO_NEGATIVE))
-               && (AbsInt32(position_error)
-                   <= fine_zone_deci_cm)) ? 1U : 0U;
+          if (task_state == TASK_TO_CENTER)
+          {
+            if ((center_fine_control_active == 0U)
+                && (AbsInt32(position_error)
+                    <= TASK_CENTER_FINE_ENTER_ZONE_DECI_CM))
+            {
+              center_fine_control_active = 1U;
+            }
+            else if ((center_fine_control_active != 0U)
+                     && (AbsInt32(position_error)
+                         > TASK_CENTER_FINE_EXIT_ZONE_DECI_CM))
+            {
+              center_fine_control_active = 0U;
+            }
+            use_center_fine_control = center_fine_control_active;
+          }
+          else
+          {
+            center_fine_control_active = 0U;
+            use_center_fine_control =
+                ((task_state == TASK_TO_NEGATIVE)
+                 && (AbsInt32(position_error)
+                     <= TASK_NEGATIVE_FINE_ZONE_DECI_CM)) ? 1U : 0U;
+          }
           micro_adjust_active = ((AbsInt32(position_error)
                                   <= control_parameters->micro_adjust_zone_deci_cm)
                                  || (use_center_fine_control != 0U)) ? 1U : 0U;
