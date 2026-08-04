@@ -201,8 +201,9 @@ typedef struct
 /* Release the strong brake before the ball reverses direction. */
 #define TASK_NEGATIVE_CAPTURE_SPEED_LIMIT_DECI_CM_S 40L
 #define TASK_NEGATIVE_CAPTURE_RELEASE_MS 250U
-#define TASK_NEGATIVE_REBOUND_BRAKE_BASE_PULSES 30L
-#define TASK_NEGATIVE_REBOUND_BRAKE_LIMIT_PULSES 45L
+#define TASK_NEGATIVE_REBOUND_START_SPEED_DECI_CM_S (-25L)
+#define TASK_NEGATIVE_REBOUND_BRAKE_BASE_PULSES 60L
+#define TASK_NEGATIVE_REBOUND_BRAKE_LIMIT_PULSES 80L
 #define BALANCE_DEBUG_STEP_PULSES 5L
 #define TASK_MAX_DURATION_MS            5000U
 #define TASK_REVERSE_BOOST_MS            900U
@@ -575,7 +576,7 @@ static int32_t ApplyNegativeTerminalCaptureBrake(
   }
   if (*brake_latched == 1U)
   {
-    if (velocity_deci_cm_per_s < 0L)
+    if (velocity_deci_cm_per_s < TASK_NEGATIVE_REBOUND_START_SPEED_DECI_CM_S)
     {
       speed = -velocity_deci_cm_per_s;
       brake_tilt = ClampInt32(TASK_NEGATIVE_CAPTURE_BRAKE_BASE_PULSES
@@ -599,7 +600,7 @@ static int32_t ApplyNegativeTerminalCaptureBrake(
                TASK_NEGATIVE_REBOUND_BRAKE_BASE_PULSES,
                TASK_NEGATIVE_REBOUND_BRAKE_LIMIT_PULSES);
   *capture_braking_active = 1U;
-  return -brake_tilt;
+  return brake_tilt;
 }
 
 static int32_t CalibrationTargetFromCommand(uint8_t command)
