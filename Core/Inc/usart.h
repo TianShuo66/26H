@@ -107,6 +107,7 @@ HAL_StatusTypeDef Debug_PrintControlState(int16_t ball_x_deci_cm,
                                            uint32_t task_elapsed_ms);
 HAL_StatusTypeDef Debug_PrintClosedLoopEnabled(void);
 HAL_StatusTypeDef Debug_PrintClosedLoopRejected(ClosedLoopRejectReason_t reason);
+HAL_StatusTypeDef Debug_PrintVehicleStartReceived(void);
 HAL_StatusTypeDef Debug_PrintTaskEvent(TaskEvent_t event,
                                        uint32_t task_elapsed_ms);
 HAL_StatusTypeDef Debug_PrintBalanceDebug(BalanceDebugEvent_t event,

@@ -25,6 +25,7 @@
 
 static uint8_t uart4_rx_byte;
 static uint8_t usart1_rx_byte;
+static uint8_t uart5_rx_byte;
 static uint8_t vision_rx_line[24];
 static uint8_t vision_rx_length;
 static uint8_t debug_control_buffer[192];
@@ -323,6 +324,10 @@ void HAL_UART_MspInit(UART_HandleTypeDef* uartHandle)
     HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
     GPIO_InitStruct.Pin = GPIO_PIN_2;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+    GPIO_InitStruct.Alternate = GPIO_AF8_UART5;
     HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
 
     HAL_NVIC_SetPriority(UART5_IRQn, 1, 0);
@@ -401,8 +406,14 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
   if (huart->Instance == UART5)
   {
     static const uint8_t start_token[] = "START";
+    uint8_t received_byte = uart5_rx_byte;
 
-    if (uart5_rx_byte == start_token[vehicle_start_match_index])
+    if ((received_byte >= 'a') && (received_byte <= 'z'))
+    {
+      received_byte = (uint8_t)(received_byte - ('a' - 'A'));
+    }
+
+    if (received_byte == start_token[vehicle_start_match_index])
     {
       vehicle_start_match_index++;
       if (vehicle_start_match_index == (sizeof(start_token) - 1U))
@@ -413,7 +424,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
     }
     else
     {
-      vehicle_start_match_index = (uart5_rx_byte == start_token[0]) ? 1U : 0U;
+      vehicle_start_match_index = (received_byte == start_token[0]) ? 1U : 0U;
     }
     (void)HAL_UART_Receive_IT(&huart5, &uart5_rx_byte, 1U);
     return;
@@ -565,6 +576,18 @@ HAL_StatusTypeDef Vision_DebugPrintLatest(void)
 HAL_StatusTypeDef Debug_PrintClosedLoopEnabled(void)
 {
   static const char message[] = "CLOSED_LOOP,ENABLED\r\n";
+
+  if (debug_control_tx_busy != 0U)
+  {
+    return HAL_BUSY;
+  }
+  return HAL_UART_Transmit(&huart1, (uint8_t *)message,
+                           sizeof(message) - 1U, 10U);
+}
+
+HAL_StatusTypeDef Debug_PrintVehicleStartReceived(void)
+{
+  static const char message[] = "VEHICLE,START,RECEIVED\r\n";
 
   if (debug_control_tx_busy != 0U)
   {

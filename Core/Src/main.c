@@ -900,6 +900,7 @@ int main(void)
         last_key_action = HAL_GetTick();
         if (vehicle_start_requested != 0U)
         {
+          (void)Debug_PrintVehicleStartReceived();
           target_x_deci_cm = TASK_CENTER_TARGET_DECI_CM;
           vehicle_start_compensation_pending = 1U;
           if (closed_loop_enabled != 0U)
