@@ -60,6 +60,7 @@ extern DMA_HandleTypeDef hdma_usart2_rx;
 extern DMA_HandleTypeDef hdma_usart2_tx;
 extern UART_HandleTypeDef huart2;
 extern UART_HandleTypeDef huart4;
+extern UART_HandleTypeDef huart5;
 /* USER CODE BEGIN EV */
 
 /* USER CODE END EV */
@@ -252,6 +253,11 @@ void USART1_IRQHandler(void)
 void UART4_IRQHandler(void)
 {
   HAL_UART_IRQHandler(&huart4);
+}
+
+void UART5_IRQHandler(void)
+{
+  HAL_UART_IRQHandler(&huart5);
 }
 
 /* USER CODE BEGIN 1 */

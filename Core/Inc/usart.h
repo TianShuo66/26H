@@ -35,6 +35,7 @@ extern "C" {
 extern UART_HandleTypeDef huart2;
 extern UART_HandleTypeDef huart4;
 extern UART_HandleTypeDef huart1;
+extern UART_HandleTypeDef huart5;
 
 /* USER CODE BEGIN Private defines */
 
@@ -79,9 +80,12 @@ typedef enum
 void MX_USART2_UART_Init(void);
 void MX_UART4_Init(void);
 void MX_USART1_UART_Init(void);
+void MX_UART5_Init(void);
 HAL_StatusTypeDef Vision_StartReception(void);
 HAL_StatusTypeDef Debug_StartCommandReception(void);
+HAL_StatusTypeDef Vehicle_StartCommandReception(void);
 uint8_t Debug_GetCommand(void);
+uint8_t Vehicle_TakeStartCommand(void);
 HAL_StatusTypeDef Vision_DebugPrintLatest(void);
 HAL_StatusTypeDef Debug_PrintMotorPosition(int32_t position_counts,
                                            int32_t position_centi_degrees);

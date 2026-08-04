@@ -30,6 +30,8 @@ static uint8_t vision_rx_length;
 static uint8_t debug_control_buffer[192];
 static volatile uint8_t debug_control_tx_busy;
 static volatile uint8_t debug_command;
+static volatile uint8_t vehicle_start_command;
+static uint8_t vehicle_start_match_index;
 
 /* Raw X readings at physical -5/0/+5cm are -5.9/-0.5/4.4cm. */
 #define VISION_X_CALIBRATION_ZERO_DECI_CM 5L
@@ -129,6 +131,7 @@ static void Vision_ParseLine(void)
 UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart4;
 UART_HandleTypeDef huart1;
+UART_HandleTypeDef huart5;
 DMA_HandleTypeDef hdma_usart2_rx;
 DMA_HandleTypeDef hdma_usart2_tx;
 
@@ -189,6 +192,22 @@ void MX_USART1_UART_Init(void)
   huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
   huart1.Init.OverSampling = UART_OVERSAMPLING_16;
   if (HAL_UART_Init(&huart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
+
+void MX_UART5_Init(void)
+{
+  huart5.Instance = UART5;
+  huart5.Init.BaudRate = 115200;
+  huart5.Init.WordLength = UART_WORDLENGTH_8B;
+  huart5.Init.StopBits = UART_STOPBITS_1;
+  huart5.Init.Parity = UART_PARITY_NONE;
+  huart5.Init.Mode = UART_MODE_TX_RX;
+  huart5.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart5.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart5) != HAL_OK)
   {
     Error_Handler();
   }
@@ -290,6 +309,25 @@ void HAL_UART_MspInit(UART_HandleTypeDef* uartHandle)
     HAL_NVIC_SetPriority(USART1_IRQn, 1, 0);
     HAL_NVIC_EnableIRQ(USART1_IRQn);
   }
+  else if(uartHandle->Instance==UART5)
+  {
+    __HAL_RCC_UART5_CLK_ENABLE();
+    __HAL_RCC_GPIOC_CLK_ENABLE();
+    __HAL_RCC_GPIOD_CLK_ENABLE();
+
+    GPIO_InitStruct.Pin = GPIO_PIN_12;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+    GPIO_InitStruct.Alternate = GPIO_AF8_UART5;
+    HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+    GPIO_InitStruct.Pin = GPIO_PIN_2;
+    HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
+
+    HAL_NVIC_SetPriority(UART5_IRQn, 1, 0);
+    HAL_NVIC_EnableIRQ(UART5_IRQn);
+  }
 }
 
 void HAL_UART_MspDeInit(UART_HandleTypeDef* uartHandle)
@@ -331,6 +369,13 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef* uartHandle)
     HAL_GPIO_DeInit(GPIOA, GPIO_PIN_9|GPIO_PIN_10);
     HAL_NVIC_DisableIRQ(USART1_IRQn);
   }
+  else if(uartHandle->Instance==UART5)
+  {
+    __HAL_RCC_UART5_CLK_DISABLE();
+    HAL_GPIO_DeInit(GPIOC, GPIO_PIN_12);
+    HAL_GPIO_DeInit(GPIOD, GPIO_PIN_2);
+    HAL_NVIC_DisableIRQ(UART5_IRQn);
+  }
 }
 
 /* USER CODE BEGIN 1 */
@@ -351,6 +396,26 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
       debug_command = usart1_rx_byte;
     }
     (void)HAL_UART_Receive_IT(&huart1, &usart1_rx_byte, 1U);
+    return;
+  }
+  if (huart->Instance == UART5)
+  {
+    static const uint8_t start_token[] = "START";
+
+    if (uart5_rx_byte == start_token[vehicle_start_match_index])
+    {
+      vehicle_start_match_index++;
+      if (vehicle_start_match_index == (sizeof(start_token) - 1U))
+      {
+        vehicle_start_command = 1U;
+        vehicle_start_match_index = 0U;
+      }
+    }
+    else
+    {
+      vehicle_start_match_index = (uart5_rx_byte == start_token[0]) ? 1U : 0U;
+    }
+    (void)HAL_UART_Receive_IT(&huart5, &uart5_rx_byte, 1U);
     return;
   }
   if (huart->Instance != UART4)
@@ -399,6 +464,11 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
     debug_control_tx_busy = 0U;
     (void)HAL_UART_Receive_IT(&huart1, &usart1_rx_byte, 1U);
   }
+  else if (huart->Instance == UART5)
+  {
+    vehicle_start_match_index = 0U;
+    (void)HAL_UART_Receive_IT(&huart5, &uart5_rx_byte, 1U);
+  }
 }
 
 HAL_StatusTypeDef Vision_StartReception(void)
@@ -416,11 +486,26 @@ HAL_StatusTypeDef Debug_StartCommandReception(void)
   return HAL_UART_Receive_IT(&huart1, &usart1_rx_byte, 1U);
 }
 
+HAL_StatusTypeDef Vehicle_StartCommandReception(void)
+{
+  vehicle_start_command = 0U;
+  vehicle_start_match_index = 0U;
+  return HAL_UART_Receive_IT(&huart5, &uart5_rx_byte, 1U);
+}
+
 uint8_t Debug_GetCommand(void)
 {
   uint8_t command = debug_command;
 
   debug_command = 0U;
+  return command;
+}
+
+uint8_t Vehicle_TakeStartCommand(void)
+{
+  uint8_t command = vehicle_start_command;
+
+  vehicle_start_command = 0U;
   return command;
 }
 

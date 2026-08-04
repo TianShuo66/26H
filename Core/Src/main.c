@@ -113,6 +113,10 @@ typedef struct
 // 静态偏置调节周期 80ms
 #define MOTOR_STATIC_BIAS_PERIOD_MS    80U
 
+/* UART5 vehicle-start feed-forward, positive vehicle X acceleration assumed. */
+#define VEHICLE_START_COMPENSATION_PULSES (-35L)
+#define VEHICLE_START_COMPENSATION_DURATION_MS 600U
+
 // 视觉图像超时阈值，无目标判定失效 180ms
 #define VISION_TIMEOUT_MS             500U
 // 小球相邻帧最大位移阈值 单位：0.1cm
@@ -669,6 +673,7 @@ int main(void)
   uint32_t task_hold_last_measurement_counter = 0U;
   uint32_t task_reverse_boost_until_ms = 0U;
   uint32_t negative_capture_release_until_ms = 0U;
+  uint32_t vehicle_start_compensation_until_ms = 0U;
   uint32_t calibration_start_ms = 0U;
   uint32_t calibration_phase_start_ms = 0U;
   int32_t motor_position_counts = 0;
@@ -698,6 +703,7 @@ int main(void)
   uint8_t negative_capture_brake_latched = 0U;
   uint8_t balance_debug_active = 0U;
   uint8_t center_fine_control_active = 0U;
+  uint8_t vehicle_start_compensation_pending = 0U;
   CalibrationState_t calibration_state = CALIBRATION_IDLE;
   TaskState_t task_state = TASK_IDLE;
 
@@ -727,6 +733,7 @@ int main(void)
   MX_USART2_UART_Init();
   MX_UART4_Init();
   MX_USART1_UART_Init();
+  MX_UART5_Init();
   /* USER CODE BEGIN 2 */
 
   if (Vision_StartReception() != HAL_OK)
@@ -734,6 +741,10 @@ int main(void)
     Error_Handler();
   }
   if (Debug_StartCommandReception() != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (Vehicle_StartCommandReception() != HAL_OK)
   {
     Error_Handler();
   }
@@ -875,9 +886,11 @@ int main(void)
     {
       uint8_t current_keys = ReadPressedKeys();
       uint8_t pressed_keys = current_keys & (uint8_t)~previous_keys;
+      uint8_t vehicle_start_requested = Vehicle_TakeStartCommand();
 
       previous_keys = current_keys;
-      if ((pressed_keys != 0U) && ((HAL_GetTick() - last_key_action) >= 50U))
+      if (((pressed_keys != 0U) && ((HAL_GetTick() - last_key_action) >= 50U))
+          || (vehicle_start_requested != 0U))
       {
         uint8_t start_requested = 0U;
         uint8_t task_start_requested = 0U;
@@ -885,7 +898,33 @@ int main(void)
         uint8_t key3_start_requested = 0U;
 
         last_key_action = HAL_GetTick();
-        if (balance_debug_active != 0U)
+        if (vehicle_start_requested != 0U)
+        {
+          target_x_deci_cm = TASK_CENTER_TARGET_DECI_CM;
+          vehicle_start_compensation_pending = 1U;
+          if (closed_loop_enabled != 0U)
+          {
+            task_state = TASK_TO_CENTER;
+            center_fine_control_active = 0U;
+            adaptive_tilt_pulse =
+                task_center_control_parameters.adaptive_tilt_initial_pulses;
+            last_adaptive_tilt_update_ms = now_ms;
+            task_start_ms = now_ms;
+            task_settled_start_ms = 0U;
+            task_hold_last_measurement_counter = last_vision_measurement_counter;
+            previous_command_active = 0U;
+            vehicle_start_compensation_until_ms =
+                now_ms + VEHICLE_START_COMPENSATION_DURATION_MS;
+            vehicle_start_compensation_pending = 0U;
+            (void)Debug_PrintTaskEvent(TASK_EVENT_START, 0U);
+          }
+          else
+          {
+            start_requested = 1U;
+            center_start_requested = 1U;
+          }
+        }
+        else if (balance_debug_active != 0U)
         {
           int32_t debug_step_pulses = 0L;
 
@@ -1117,6 +1156,12 @@ int main(void)
             previous_command_active = 0U;
             motor_position_request_pending = 0U;
             (void)Debug_PrintClosedLoopEnabled();
+            if (vehicle_start_compensation_pending != 0U)
+            {
+              vehicle_start_compensation_until_ms =
+                  now_ms + VEHICLE_START_COMPENSATION_DURATION_MS;
+              vehicle_start_compensation_pending = 0U;
+            }
             if (task_start_requested != 0U)
             {
               task_state = TASK_TO_POSITIVE;
@@ -1520,6 +1565,15 @@ int main(void)
             }
           }
           motor_tilt_target_pulse = desired_tilt_pulse;
+          if ((target_x_deci_cm == TASK_CENTER_TARGET_DECI_CM)
+              && (now_ms < vehicle_start_compensation_until_ms))
+          {
+            motor_tilt_target_pulse = ClampInt32(
+                motor_tilt_target_pulse + VEHICLE_START_COMPENSATION_PULSES,
+                -MOTOR_TILT_TARGET_LIMIT_PULSES,
+                MOTOR_TILT_TARGET_LIMIT_PULSES);
+          }
+          desired_tilt_pulse = motor_tilt_target_pulse;
           step = desired_tilt_pulse - motor_pulse_est;
           fast_tilt_tracking = (AbsInt32(step)
                                 >= MOTOR_FAST_TRACK_ERROR_PULSES) ? 1U : 0U;
