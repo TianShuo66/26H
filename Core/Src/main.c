@@ -193,6 +193,7 @@ typedef struct
 #define TASK_NEGATIVE_ADAPTIVE_TILT_INITIAL_PULSES 30L
 #define TASK_NEGATIVE_CAPTURE_BRAKE_ZONE_DECI_CM 5L
 #define TASK_NEGATIVE_CAPTURE_RELEASE_MS 250U
+#define BALANCE_DEBUG_STEP_PULSES 5L
 #define TASK_MAX_DURATION_MS           10000U
 #define TASK_REVERSE_BOOST_MS            900U
 #define CALIBRATION_HOLD_MS            1000U
@@ -591,6 +592,7 @@ int main(void)
   uint32_t calibration_start_ms = 0U;
   uint32_t calibration_phase_start_ms = 0U;
   int32_t motor_position_counts = 0;
+  int32_t mechanical_zero_counts = MOTOR_FIXED_ZERO_COUNTS;
   int32_t motor_zero_counts = MOTOR_FIXED_ZERO_COUNTS;
   int32_t motor_pulse_est = 0;
   int32_t motor_tilt_target_pulse = 0;
@@ -613,6 +615,7 @@ int main(void)
   uint8_t static_compensation_active = 0U;
   uint8_t micro_adjust_active = 0U;
   uint8_t capture_braking_active = 0U;
+  uint8_t balance_debug_active = 0U;
   CalibrationState_t calibration_state = CALIBRATION_IDLE;
   TaskState_t task_state = TASK_IDLE;
 
@@ -771,7 +774,7 @@ int main(void)
           else
           {
             EnableMotor(&motor_enabled);
-            motor_zero_counts = MOTOR_FIXED_ZERO_COUNTS;
+            motor_zero_counts = mechanical_zero_counts;
             motor_pulse_est = 0;
             calibration_target_pulse = requested_calibration_target;
             calibration_state = CALIBRATION_MOVE;
@@ -800,7 +803,100 @@ int main(void)
         uint8_t key3_start_requested = 0U;
 
         last_key_action = HAL_GetTick();
-        if (calibration_state != CALIBRATION_IDLE)
+        if (balance_debug_active != 0U)
+        {
+          int32_t debug_step_pulses = 0L;
+
+          if ((pressed_keys & 0x01U) != 0U)
+          {
+            debug_step_pulses = BALANCE_DEBUG_STEP_PULSES;
+          }
+          else if ((pressed_keys & 0x02U) != 0U)
+          {
+            debug_step_pulses = -BALANCE_DEBUG_STEP_PULSES;
+          }
+
+          if (debug_step_pulses != 0L)
+          {
+            if (!Emm_V5_Read_Current_Position(MOTOR_ADDRESS,
+                                               &motor_position_counts))
+            {
+              (void)Debug_PrintBalanceDebug(BALANCE_DEBUG_POSITION_READ_FAILED,
+                                             0L, 0L);
+            }
+            else
+            {
+              motor_pulse_est = MotorPositionToPulse(motor_position_counts,
+                                                      mechanical_zero_counts);
+              if (SendShortRelativePulse(motor_pulse_est, debug_step_pulses,
+                                         0U) != 0U)
+              {
+                (void)Debug_PrintBalanceDebug(BALANCE_DEBUG_STEP,
+                                               motor_position_counts,
+                                               motor_pulse_est + debug_step_pulses);
+              }
+            }
+          }
+          else if ((pressed_keys & 0x04U) != 0U)
+          {
+            if (!Emm_V5_Read_Current_Position(MOTOR_ADDRESS,
+                                               &motor_position_counts))
+            {
+              (void)Debug_PrintBalanceDebug(BALANCE_DEBUG_POSITION_READ_FAILED,
+                                             0L, 0L);
+            }
+            else
+            {
+              mechanical_zero_counts = motor_position_counts;
+              motor_zero_counts = mechanical_zero_counts;
+              motor_pulse_est = 0L;
+              (void)Debug_PrintBalanceDebug(BALANCE_DEBUG_SAVE,
+                                             mechanical_zero_counts, 0L);
+            }
+          }
+          else if ((pressed_keys & 0x08U) != 0U)
+          {
+            StopAndDisableMotor(&motor_enabled);
+            balance_debug_active = 0U;
+            motor_position_request_pending = 0U;
+            (void)Debug_PrintBalanceDebug(BALANCE_DEBUG_EXIT,
+                                           mechanical_zero_counts, 0L);
+          }
+        }
+        else if ((pressed_keys & 0x08U) != 0U)
+        {
+          if (calibration_state != CALIBRATION_IDLE)
+          {
+            StopAndDisableMotor(&motor_enabled);
+            calibration_state = CALIBRATION_IDLE;
+          }
+          if (closed_loop_enabled != 0U)
+          {
+            StopAndDisableMotor(&motor_enabled);
+            closed_loop_enabled = 0U;
+            previous_command_active = 0U;
+            task_state = TASK_IDLE;
+          }
+          EnableMotor(&motor_enabled);
+          motor_position_request_pending = 0U;
+          if (!Emm_V5_Read_Current_Position(MOTOR_ADDRESS,
+                                             &motor_position_counts))
+          {
+            (void)Debug_PrintBalanceDebug(BALANCE_DEBUG_POSITION_READ_FAILED,
+                                           0L, 0L);
+          }
+          else
+          {
+            motor_zero_counts = mechanical_zero_counts;
+            motor_pulse_est = MotorPositionToPulse(motor_position_counts,
+                                                    mechanical_zero_counts);
+            balance_debug_active = 1U;
+            (void)Debug_PrintBalanceDebug(BALANCE_DEBUG_ENTER,
+                                           motor_position_counts,
+                                           motor_pulse_est);
+          }
+        }
+        else if (calibration_state != CALIBRATION_IDLE)
         {
           StopAndDisableMotor(&motor_enabled);
           calibration_state = CALIBRATION_IDLE;
@@ -882,12 +978,6 @@ int main(void)
             key3_start_requested = 1U;
           }
         }
-        else if ((pressed_keys & 0x08U) != 0U)
-        {
-          target_x_deci_cm = TASK_NEGATIVE_TARGET_DECI_CM;
-          start_requested = (closed_loop_enabled == 0U) ? 1U : 0U;
-        }
-
         if (start_requested != 0U)
         {
           if ((vision_data_valid == 0U) || (ball_state_valid == 0U))
@@ -915,7 +1005,7 @@ int main(void)
           {
             /* Always use the calibrated mechanical zero, never the start position. */
             EnableMotor(&motor_enabled);
-            motor_zero_counts = MOTOR_FIXED_ZERO_COUNTS;
+            motor_zero_counts = mechanical_zero_counts;
             motor_pulse_est = 0;
             motor_tilt_target_pulse = 0;
             adaptive_tilt_pulse =

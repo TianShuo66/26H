@@ -65,6 +65,15 @@ typedef enum
   TASK_EVENT_START_POSITION
 } TaskEvent_t;
 
+typedef enum
+{
+  BALANCE_DEBUG_ENTER = 0U,
+  BALANCE_DEBUG_STEP,
+  BALANCE_DEBUG_SAVE,
+  BALANCE_DEBUG_EXIT,
+  BALANCE_DEBUG_POSITION_READ_FAILED
+} BalanceDebugEvent_t;
+
 /* USER CODE END Private defines */
 
 void MX_USART2_UART_Init(void);
@@ -96,6 +105,9 @@ HAL_StatusTypeDef Debug_PrintClosedLoopEnabled(void);
 HAL_StatusTypeDef Debug_PrintClosedLoopRejected(ClosedLoopRejectReason_t reason);
 HAL_StatusTypeDef Debug_PrintTaskEvent(TaskEvent_t event,
                                        uint32_t task_elapsed_ms);
+HAL_StatusTypeDef Debug_PrintBalanceDebug(BalanceDebugEvent_t event,
+                                          int32_t position_counts,
+                                          int32_t relative_pulse);
 HAL_StatusTypeDef Debug_PrintCalibrationState(uint8_t phase,
                                               int32_t target_pulse,
                                               int16_t ball_x_deci_cm,

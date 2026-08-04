@@ -706,6 +706,57 @@ HAL_StatusTypeDef Debug_PrintMotorPosition(int32_t position_counts,
   return HAL_UART_Transmit(&huart1, buffer, length, 10U);
 }
 
+HAL_StatusTypeDef Debug_PrintBalanceDebug(BalanceDebugEvent_t event,
+                                          int32_t position_counts,
+                                          int32_t relative_pulse)
+{
+  uint8_t buffer[80];
+  uint8_t length = 0U;
+  const char *event_name;
+
+  switch (event)
+  {
+    case BALANCE_DEBUG_ENTER: event_name = "ENTER"; break;
+    case BALANCE_DEBUG_STEP: event_name = "STEP"; break;
+    case BALANCE_DEBUG_SAVE: event_name = "SAVE"; break;
+    case BALANCE_DEBUG_EXIT: event_name = "EXIT"; break;
+    default: event_name = "POSITION_READ_FAILED"; break;
+  }
+  if (debug_control_tx_busy != 0U)
+  {
+    return HAL_BUSY;
+  }
+  buffer[length++] = 'B';
+  buffer[length++] = 'A';
+  buffer[length++] = 'L';
+  buffer[length++] = 'A';
+  buffer[length++] = 'N';
+  buffer[length++] = 'C';
+  buffer[length++] = 'E';
+  buffer[length++] = ',';
+  while (*event_name != '\0')
+  {
+    buffer[length++] = (uint8_t)*event_name++;
+  }
+  buffer[length++] = ',';
+  buffer[length++] = 'R';
+  buffer[length++] = 'A';
+  buffer[length++] = 'W';
+  buffer[length++] = ',';
+  Debug_AppendSignedInt32(buffer, &length, position_counts);
+  buffer[length++] = ',';
+  buffer[length++] = 'P';
+  buffer[length++] = 'U';
+  buffer[length++] = 'L';
+  buffer[length++] = 'S';
+  buffer[length++] = 'E';
+  buffer[length++] = ',';
+  Debug_AppendSignedInt32(buffer, &length, relative_pulse);
+  buffer[length++] = '\r';
+  buffer[length++] = '\n';
+  return HAL_UART_Transmit(&huart1, buffer, length, 10U);
+}
+
 HAL_StatusTypeDef Debug_PrintControlState(int16_t ball_x_deci_cm,
                                            int16_t ball_y_deci_cm,
                                            int16_t target_x_deci_cm,
