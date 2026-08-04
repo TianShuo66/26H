@@ -202,6 +202,11 @@ typedef struct
 #define TASK_KEY3_ADAPTIVE_TILT_STEP_PULSES 5L
 #define TASK_KEY3_ADAPTIVE_TILT_LIMIT_PULSES 155L
 #define TASK_KEY3_ADAPTIVE_TILT_PERIOD_MS 150U
+#define TASK_KEY3_CAPTURE_BRAKE_ZONE_DECI_CM 30L
+#define TASK_KEY3_CAPTURE_SPEED_LIMIT_DECI_CM_S 20L
+#define TASK_KEY3_CAPTURE_BRAKE_BASE_PULSES 30L
+#define TASK_KEY3_CAPTURE_BRAKE_GAIN_NUMERATOR 1L
+#define TASK_KEY3_CAPTURE_BRAKE_LIMIT_PULSES 60L
 /* Negative target: brake before the final approach, then overcome friction. */
 #define TASK_NEGATIVE_FINE_ZONE_DECI_CM 15L
 #define TASK_NEGATIVE_FINE_STATIC_PULSES 50L
@@ -267,11 +272,11 @@ static const TaskControlParameters_t task_key3_control_parameters =
   TASK_KEY3_ADAPTIVE_TILT_STEP_PULSES,
   TASK_KEY3_ADAPTIVE_TILT_LIMIT_PULSES,
   TASK_KEY3_ADAPTIVE_TILT_PERIOD_MS,
-  TASK_CENTER_CAPTURE_BRAKE_ZONE_DECI_CM,
-  TASK_CENTER_CAPTURE_SPEED_LIMIT_DECI_CM_S,
-  TASK_CENTER_CAPTURE_BRAKE_BASE_PULSES,
-  TASK_CENTER_CAPTURE_BRAKE_GAIN_NUMERATOR,
-  TASK_CENTER_CAPTURE_BRAKE_LIMIT_PULSES
+  TASK_KEY3_CAPTURE_BRAKE_ZONE_DECI_CM,
+  TASK_KEY3_CAPTURE_SPEED_LIMIT_DECI_CM_S,
+  TASK_KEY3_CAPTURE_BRAKE_BASE_PULSES,
+  TASK_KEY3_CAPTURE_BRAKE_GAIN_NUMERATOR,
+  TASK_KEY3_CAPTURE_BRAKE_LIMIT_PULSES
 };
 
 /* +5cm keeps the previously validated values. */
@@ -1406,7 +1411,9 @@ int main(void)
           }
           use_positive_adaptive =
               (target_x_deci_cm == TASK_POSITIVE_TARGET_DECI_CM) ? 1U : 0U;
-          use_terminal_capture = use_positive_adaptive;
+          use_terminal_capture =
+              ((target_x_deci_cm == TASK_POSITIVE_TARGET_DECI_CM)
+               || (target_x_deci_cm == TASK_KEY3_TARGET_DECI_CM)) ? 1U : 0U;
           negative_capture_release_active =
               ((task_state == TASK_TO_NEGATIVE)
                && (now_ms < negative_capture_release_until_ms)) ? 1U : 0U;
@@ -1505,6 +1512,11 @@ int main(void)
             if (capture_braking_active != 0U)
             {
               static_compensation_active = 0U;
+              if (target_x_deci_cm == TASK_KEY3_TARGET_DECI_CM)
+              {
+                adaptive_tilt_pulse = adaptive_tilt_initial_pulse;
+                last_adaptive_tilt_update_ms = now_ms;
+              }
             }
           }
           motor_tilt_target_pulse = desired_tilt_pulse;
