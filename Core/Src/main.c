@@ -184,6 +184,7 @@ typedef struct
 #define TASK_CENTER_ADAPTIVE_TILT_INITIAL_PULSES 15L
 #define TASK_CENTER_ADAPTIVE_TILT_STEP_PULSES 5L
 #define TASK_CENTER_ADAPTIVE_TILT_LIMIT_PULSES 150L
+#define TASK_KEY3_ADAPTIVE_TILT_LIMIT_PULSES 155L
 #define TASK_CENTER_ADAPTIVE_TILT_PERIOD_MS 250U
 #define TASK_CENTER_CAPTURE_BRAKE_ZONE_DECI_CM 10L
 #define TASK_CENTER_CAPTURE_SPEED_LIMIT_DECI_CM_S 15L
@@ -242,6 +243,24 @@ static const TaskControlParameters_t task_negative_control_parameters =
   TASK_NEGATIVE_CAPTURE_BRAKE_BASE_PULSES,
   TASK_NEGATIVE_CAPTURE_BRAKE_GAIN_NUMERATOR,
   TASK_NEGATIVE_CAPTURE_BRAKE_LIMIT_PULSES
+};
+
+/* KEY3 may use the available mechanical travel while retaining a safety margin. */
+static const TaskControlParameters_t task_key3_control_parameters =
+{
+  TASK_CENTER_VREF_GAIN_NUMERATOR, TASK_CENTER_VREF_GAIN_DIVISOR,
+  TASK_CENTER_VREF_LIMIT_DECI_CM_S, TASK_CENTER_TILT_GAIN_NUMERATOR,
+  TASK_CENTER_TILT_GAIN_DIVISOR, TASK_CENTER_MICRO_ADJUST_ZONE_DECI_CM,
+  TASK_CENTER_ADAPTIVE_MOTION_DECI_CM_S,
+  TASK_CENTER_ADAPTIVE_TILT_INITIAL_PULSES,
+  TASK_CENTER_ADAPTIVE_TILT_STEP_PULSES,
+  TASK_KEY3_ADAPTIVE_TILT_LIMIT_PULSES,
+  TASK_CENTER_ADAPTIVE_TILT_PERIOD_MS,
+  TASK_CENTER_CAPTURE_BRAKE_ZONE_DECI_CM,
+  TASK_CENTER_CAPTURE_SPEED_LIMIT_DECI_CM_S,
+  TASK_CENTER_CAPTURE_BRAKE_BASE_PULSES,
+  TASK_CENTER_CAPTURE_BRAKE_GAIN_NUMERATOR,
+  TASK_CENTER_CAPTURE_BRAKE_LIMIT_PULSES
 };
 
 /* +5cm keeps the previously validated values. */
@@ -319,8 +338,11 @@ static const TaskControlParameters_t *GetTaskControlParameters(
   {
     return &task_negative_control_parameters;
   }
-  if ((target_x_deci_cm == TASK_CENTER_TARGET_DECI_CM)
-      || (target_x_deci_cm == TASK_KEY3_TARGET_DECI_CM))
+  if (target_x_deci_cm == TASK_KEY3_TARGET_DECI_CM)
+  {
+    return &task_key3_control_parameters;
+  }
+  if (target_x_deci_cm == TASK_CENTER_TARGET_DECI_CM)
   {
     return &task_center_control_parameters;
   }
