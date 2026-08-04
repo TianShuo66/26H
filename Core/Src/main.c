@@ -191,8 +191,8 @@ typedef struct
 #define TASK_CENTER_CAPTURE_BRAKE_LIMIT_PULSES 25L
 /* Negative target: brake before the final approach, then overcome friction. */
 #define TASK_NEGATIVE_FINE_ZONE_DECI_CM 15L
-#define TASK_NEGATIVE_FINE_STATIC_PULSES 30L
-#define TASK_NEGATIVE_ADAPTIVE_TILT_INITIAL_PULSES 30L
+#define TASK_NEGATIVE_FINE_STATIC_PULSES 50L
+#define TASK_NEGATIVE_ADAPTIVE_TILT_INITIAL_PULSES 50L
 /* Brake only inside the final 0.5cm to preserve the approach momentum. */
 #define TASK_NEGATIVE_CAPTURE_BRAKE_ZONE_DECI_CM 5L
 #define TASK_NEGATIVE_CAPTURE_BRAKE_BASE_PULSES 25L
