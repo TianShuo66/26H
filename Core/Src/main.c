@@ -599,7 +599,7 @@ static int32_t ApplyNegativeTerminalCaptureBrake(
                TASK_NEGATIVE_REBOUND_BRAKE_BASE_PULSES,
                TASK_NEGATIVE_REBOUND_BRAKE_LIMIT_PULSES);
   *capture_braking_active = 1U;
-  return brake_tilt;
+  return -brake_tilt;
 }
 
 static int32_t CalibrationTargetFromCommand(uint8_t command)
