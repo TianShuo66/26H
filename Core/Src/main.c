@@ -193,8 +193,8 @@ typedef struct
 #define TASK_NEGATIVE_FINE_ZONE_DECI_CM 15L
 #define TASK_NEGATIVE_FINE_STATIC_PULSES 50L
 #define TASK_NEGATIVE_ADAPTIVE_TILT_INITIAL_PULSES 50L
-/* Brake only inside the final 0.5cm to preserve the approach momentum. */
-#define TASK_NEGATIVE_CAPTURE_BRAKE_ZONE_DECI_CM 5L
+/* Brake only inside the final 0.2cm to preserve the approach momentum. */
+#define TASK_NEGATIVE_CAPTURE_BRAKE_ZONE_DECI_CM 2L
 #define TASK_NEGATIVE_CAPTURE_BRAKE_BASE_PULSES 25L
 #define TASK_NEGATIVE_CAPTURE_BRAKE_GAIN_NUMERATOR 2L
 #define TASK_NEGATIVE_CAPTURE_BRAKE_LIMIT_PULSES 42L
