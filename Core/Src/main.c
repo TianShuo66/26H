@@ -553,6 +553,39 @@ static int32_t ApplyTerminalCaptureBrake(int32_t desired_tilt_pulse,
   return (velocity_deci_cm_per_s > 0) ? brake_tilt : -brake_tilt;
 }
 
+static int32_t ApplyNegativeTerminalCaptureBrake(
+    int32_t desired_tilt_pulse, int32_t position_error_deci_cm,
+    int32_t velocity_deci_cm_per_s, uint8_t *brake_latched,
+    uint8_t *capture_braking_active)
+{
+  int32_t speed;
+  int32_t brake_tilt;
+
+  if (*brake_latched == 0U)
+  {
+    if ((position_error_deci_cm > 0L)
+        || (position_error_deci_cm < -TASK_NEGATIVE_CAPTURE_BRAKE_ZONE_DECI_CM)
+        || (velocity_deci_cm_per_s >= -TASK_NEGATIVE_CAPTURE_SPEED_LIMIT_DECI_CM_S))
+    {
+      return desired_tilt_pulse;
+    }
+    *brake_latched = 1U;
+  }
+  if (velocity_deci_cm_per_s >= 0L)
+  {
+    *brake_latched = 0U;
+    return desired_tilt_pulse;
+  }
+  speed = -velocity_deci_cm_per_s;
+  brake_tilt = ClampInt32(TASK_NEGATIVE_CAPTURE_BRAKE_BASE_PULSES
+               + ((speed - TASK_NEGATIVE_CAPTURE_SPEED_LIMIT_DECI_CM_S)
+                  * TASK_NEGATIVE_CAPTURE_BRAKE_GAIN_NUMERATOR),
+               TASK_NEGATIVE_CAPTURE_BRAKE_BASE_PULSES,
+               TASK_NEGATIVE_CAPTURE_BRAKE_LIMIT_PULSES);
+  *capture_braking_active = 1U;
+  return -brake_tilt;
+}
+
 static int32_t CalibrationTargetFromCommand(uint8_t command)
 {
   switch (command)
@@ -623,6 +656,7 @@ int main(void)
   uint8_t static_compensation_active = 0U;
   uint8_t micro_adjust_active = 0U;
   uint8_t capture_braking_active = 0U;
+  uint8_t negative_capture_brake_latched = 0U;
   uint8_t balance_debug_active = 0U;
   uint8_t center_fine_control_active = 0U;
   CalibrationState_t calibration_state = CALIBRATION_IDLE;
@@ -927,6 +961,7 @@ int main(void)
             task_hold_last_measurement_counter = last_vision_measurement_counter;
             task_reverse_boost_until_ms = 0U;
             negative_capture_release_until_ms = 0U;
+            negative_capture_brake_latched = 0U;
             previous_command_active = 0U;
             (void)Debug_PrintTaskEvent(TASK_EVENT_START, 0U);
           }
@@ -1052,6 +1087,7 @@ int main(void)
               task_hold_last_measurement_counter = last_vision_measurement_counter;
               task_reverse_boost_until_ms = 0U;
               negative_capture_release_until_ms = 0U;
+              negative_capture_brake_latched = 0U;
               (void)Debug_PrintTaskEvent(TASK_EVENT_START, 0U);
             }
             else if (center_start_requested != 0U)
@@ -1208,6 +1244,7 @@ int main(void)
           task_hold_last_measurement_counter = last_vision_measurement_counter;
           task_reverse_boost_until_ms = now_ms + TASK_REVERSE_BOOST_MS;
           negative_capture_release_until_ms = 0U;
+          negative_capture_brake_latched = 0U;
           (void)Debug_PrintTaskEvent(TASK_EVENT_REVERSE,
                                      now_ms - task_start_ms);
         }
@@ -1331,8 +1368,7 @@ int main(void)
           }
           use_positive_adaptive =
               (target_x_deci_cm == TASK_POSITIVE_TARGET_DECI_CM) ? 1U : 0U;
-          use_terminal_capture = ((task_state == TASK_TO_NEGATIVE)
-                                  || (use_positive_adaptive != 0U)) ? 1U : 0U;
+          use_terminal_capture = use_positive_adaptive;
           negative_capture_release_active =
               ((task_state == TASK_TO_NEGATIVE)
                && (now_ms < negative_capture_release_until_ms)) ? 1U : 0U;
@@ -1410,7 +1446,19 @@ int main(void)
               adaptive_tilt_pulse -= adaptive_tilt_release_step_pulse;
             }
           }
-          if (use_terminal_capture != 0U)
+          if (task_state == TASK_TO_NEGATIVE)
+          {
+            desired_tilt_pulse = ApplyNegativeTerminalCaptureBrake(
+                desired_tilt_pulse, position_error,
+                ball_velocity_deci_cm_per_s,
+                &negative_capture_brake_latched,
+                &capture_braking_active);
+            if (capture_braking_active != 0U)
+            {
+              static_compensation_active = 0U;
+            }
+          }
+          else if (use_terminal_capture != 0U)
           {
             desired_tilt_pulse = ApplyTerminalCaptureBrake(
                 desired_tilt_pulse, position_error,
@@ -1419,11 +1467,6 @@ int main(void)
             if (capture_braking_active != 0U)
             {
               static_compensation_active = 0U;
-              if (task_state == TASK_TO_NEGATIVE)
-              {
-                negative_capture_release_until_ms =
-                    now_ms + TASK_NEGATIVE_CAPTURE_RELEASE_MS;
-              }
             }
           }
           motor_tilt_target_pulse = desired_tilt_pulse;
