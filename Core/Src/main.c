@@ -195,12 +195,14 @@ typedef struct
 #define TASK_NEGATIVE_ADAPTIVE_TILT_INITIAL_PULSES 30L
 /* Start the final brake at -4.0cm instead of prematurely at -3.5cm. */
 #define TASK_NEGATIVE_CAPTURE_BRAKE_ZONE_DECI_CM 10L
-#define TASK_NEGATIVE_CAPTURE_BRAKE_BASE_PULSES 35L
+#define TASK_NEGATIVE_CAPTURE_BRAKE_BASE_PULSES 25L
 #define TASK_NEGATIVE_CAPTURE_BRAKE_GAIN_NUMERATOR 2L
-#define TASK_NEGATIVE_CAPTURE_BRAKE_LIMIT_PULSES 54L
+#define TASK_NEGATIVE_CAPTURE_BRAKE_LIMIT_PULSES 42L
 /* Release the strong brake before the ball reverses direction. */
 #define TASK_NEGATIVE_CAPTURE_SPEED_LIMIT_DECI_CM_S 40L
 #define TASK_NEGATIVE_CAPTURE_RELEASE_MS 250U
+#define TASK_NEGATIVE_REBOUND_BRAKE_BASE_PULSES 30L
+#define TASK_NEGATIVE_REBOUND_BRAKE_LIMIT_PULSES 45L
 #define BALANCE_DEBUG_STEP_PULSES 5L
 #define TASK_MAX_DURATION_MS            5000U
 #define TASK_REVERSE_BOOST_MS            900U
@@ -571,19 +573,33 @@ static int32_t ApplyNegativeTerminalCaptureBrake(
     }
     *brake_latched = 1U;
   }
-  if (velocity_deci_cm_per_s >= 0L)
+  if (*brake_latched == 1U)
+  {
+    if (velocity_deci_cm_per_s < 0L)
+    {
+      speed = -velocity_deci_cm_per_s;
+      brake_tilt = ClampInt32(TASK_NEGATIVE_CAPTURE_BRAKE_BASE_PULSES
+                   + ((speed - TASK_NEGATIVE_CAPTURE_SPEED_LIMIT_DECI_CM_S)
+                      * TASK_NEGATIVE_CAPTURE_BRAKE_GAIN_NUMERATOR),
+                   TASK_NEGATIVE_CAPTURE_BRAKE_BASE_PULSES,
+                   TASK_NEGATIVE_CAPTURE_BRAKE_LIMIT_PULSES);
+      *capture_braking_active = 1U;
+      return -brake_tilt;
+    }
+    *brake_latched = 2U;
+  }
+  if (position_error_deci_cm >= 0L)
   {
     *brake_latched = 0U;
     return desired_tilt_pulse;
   }
-  speed = -velocity_deci_cm_per_s;
-  brake_tilt = ClampInt32(TASK_NEGATIVE_CAPTURE_BRAKE_BASE_PULSES
-               + ((speed - TASK_NEGATIVE_CAPTURE_SPEED_LIMIT_DECI_CM_S)
-                  * TASK_NEGATIVE_CAPTURE_BRAKE_GAIN_NUMERATOR),
-               TASK_NEGATIVE_CAPTURE_BRAKE_BASE_PULSES,
-               TASK_NEGATIVE_CAPTURE_BRAKE_LIMIT_PULSES);
+  speed = (velocity_deci_cm_per_s > 0L) ? velocity_deci_cm_per_s : 0L;
+  brake_tilt = ClampInt32(TASK_NEGATIVE_REBOUND_BRAKE_BASE_PULSES
+               + (speed / 2L),
+               TASK_NEGATIVE_REBOUND_BRAKE_BASE_PULSES,
+               TASK_NEGATIVE_REBOUND_BRAKE_LIMIT_PULSES);
   *capture_braking_active = 1U;
-  return -brake_tilt;
+  return brake_tilt;
 }
 
 static int32_t CalibrationTargetFromCommand(uint8_t command)
